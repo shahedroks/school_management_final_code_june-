@@ -17,6 +17,13 @@ Future<void> downloadTeacherPdfAttachment(
   String fileName,
 ) async {
   final lang = context.read<LanguageProvider>();
+  void showMessage(String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   try {
     final response = await http.get(Uri.parse(url));
     if (response.statusCode != 200) {
@@ -26,17 +33,10 @@ Future<void> downloadTeacherPdfAttachment(
     final safe = _safePdfFileName(fileName);
     final file = File('${dir.path}/$safe');
     await file.writeAsBytes(response.bodyBytes, flush: true);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(lang.t('assignments.pdfDownloaded'))),
-    );
+    showMessage(lang.t('assignments.pdfDownloaded'));
     await OpenFilex.open(file.path);
   } catch (e) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(lang.t('assignments.pdfDownloadFailed'))),
-      );
-    }
+    showMessage(lang.t('assignments.pdfDownloadFailed'));
   }
 }
 

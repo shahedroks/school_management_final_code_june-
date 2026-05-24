@@ -17,15 +17,17 @@ class TeacherAssignmentDetailsScreen extends StatefulWidget {
 }
 
 class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetailsScreen> {
-  Future<AssignmentEntity?>? _future;
-  String? _futureForId;
+  AssignmentEntity? _assignment;
+  bool _loading = true;
+  String? _loadedForId;
+  int _loadToken = 0;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_futureForId != widget.assignmentId) {
-      _futureForId = widget.assignmentId;
-      _future = context.read<AssignmentsRepository>().getAssignmentById(widget.assignmentId);
+    if (_loadedForId != widget.assignmentId) {
+      _loadedForId = widget.assignmentId;
+      _loadAssignment();
     }
   }
 
@@ -33,9 +35,84 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
   void didUpdateWidget(covariant TeacherAssignmentDetailsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.assignmentId != widget.assignmentId) {
-      _futureForId = widget.assignmentId;
-      _future = context.read<AssignmentsRepository>().getAssignmentById(widget.assignmentId);
+      _loadedForId = widget.assignmentId;
+      _assignment = null;
+      _loadAssignment();
     }
+  }
+
+  Future<void> _loadAssignment() async {
+    final token = ++_loadToken;
+    if (_assignment == null && mounted) {
+      setState(() => _loading = true);
+    }
+    final a = await context.read<AssignmentsRepository>().getAssignmentById(widget.assignmentId);
+    if (!mounted || token != _loadToken) return;
+    setState(() {
+      _assignment = a;
+      _loading = false;
+    });
+  }
+
+  AssignmentEntity _withSubmissionGrade(
+    AssignmentEntity assignment,
+    String submissionId,
+    int score,
+    String feedback,
+  ) {
+    final subs = assignment.submissions;
+    if (subs == null || subs.isEmpty) return assignment;
+    final updatedSubs = subs.map((s) {
+      if (s.id != submissionId) return s;
+      return SubmissionEntity(
+        id: s.id,
+        assignmentId: s.assignmentId,
+        studentId: s.studentId,
+        studentName: s.studentName,
+        fileUrl: s.fileUrl,
+        text: s.text,
+        submittedAt: s.submittedAt,
+        status: 'graded',
+        grade: score,
+        feedback: feedback.isEmpty ? null : feedback,
+      );
+    }).toList();
+    return AssignmentEntity(
+      id: assignment.id,
+      classId: assignment.classId,
+      title: assignment.title,
+      description: assignment.description,
+      dueDate: assignment.dueDate,
+      points: assignment.points,
+      status: assignment.status,
+      grade: assignment.grade,
+      feedback: assignment.feedback,
+      submissions: updatedSubs,
+      subjectName: assignment.subjectName,
+      gradeLabel: assignment.gradeLabel,
+      attachments: assignment.attachments,
+    );
+  }
+
+  Future<void> _onGradeSaved({
+    required String submissionId,
+    required int score,
+    required String feedback,
+  }) async {
+    if (!mounted) return;
+    final current = _assignment;
+    if (current != null) {
+      setState(() {
+        _assignment = _withSubmissionGrade(current, submissionId, score, feedback);
+      });
+    }
+    final token = ++_loadToken;
+    final fresh = await context.read<AssignmentsRepository>().getAssignmentById(widget.assignmentId);
+    if (!mounted || token != _loadToken || fresh == null) return;
+    setState(() {
+      _assignment = _withSubmissionGrade(fresh, submissionId, score, feedback);
+      _loading = false;
+    });
   }
 
   String _formatDue(String iso) {
@@ -103,19 +180,13 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
         : t;
   }
 
-  Future<void> _reloadAssignment() async {
-    if (!mounted) return;
-    setState(() {
-      _future = context.read<AssignmentsRepository>().getAssignmentById(widget.assignmentId);
-    });
-  }
-
   Future<void> _showEnterGradeDialog(
     BuildContext screenContext,
     LanguageProvider lang,
     AssignmentEntity assignment,
-    SubmissionEntity submission,
-  ) async {
+    SubmissionEntity submission, {
+    required bool isUpdate,
+  }) async {
     await showDialog<void>(
       context: screenContext,
       builder: (ctx) => _EnterGradeDialog(
@@ -123,7 +194,8 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
         assignment: assignment,
         submission: submission,
         hostContext: screenContext,
-        onSuccess: _reloadAssignment,
+        isUpdate: isUpdate,
+        onSuccess: _onGradeSaved,
       ),
     );
   }
@@ -132,99 +204,96 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
 
-    return FutureBuilder<AssignmentEntity?>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final a = snapshot.data;
-        if (a == null) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                lang.t('assignments.noAssignmentsAvailable'),
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade700),
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final a = _assignment;
+    if (a == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            lang.t('assignments.noAssignmentsAvailable'),
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade700),
+          ),
+        ),
+      );
+    }
+
+    final submissions = a.submissions ?? [];
+    final attachments = a.attachments ?? [];
+    final meta = <String>[];
+    if (a.gradeLabel != null && a.gradeLabel!.isNotEmpty) meta.add(a.gradeLabel!);
+    if (a.subjectName != null && a.subjectName!.isNotEmpty) meta.add(a.subjectName!);
+
+    return Material(
+      color: Colors.transparent,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.2)),
               ),
-            ),
-          );
-        }
-
-        final submissions = a.submissions ?? [];
-        final attachments = a.attachments ?? [];
-        final meta = <String>[];
-        if (a.gradeLabel != null && a.gradeLabel!.isNotEmpty) meta.add(a.gradeLabel!);
-        if (a.subjectName != null && a.subjectName!.isNotEmpty) meta.add(a.subjectName!);
-
-        return Material(
-          color: Colors.transparent,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.2)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      a.title,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primary,
+                          ),
+                    ),
+                    if (meta.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        meta.join(' · '),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey.shade700,
+                            ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Text(
+                      a.description.isEmpty ? '—' : a.description,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          a.title,
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primary,
-                              ),
-                        ),
-                        if (meta.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            meta.join(' · '),
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.grey.shade700,
-                                ),
+                        Icon(Icons.event, size: 18, color: Colors.grey.shade600),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${lang.t('assignments.dueDate')}: ${_formatDue(a.dueDate)}',
+                            style: TextStyle(color: Colors.grey.shade700),
                           ),
-                        ],
-                        const SizedBox(height: 12),
-                        Text(
-                          a.description.isEmpty ? '—' : a.description,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.event, size: 18, color: Colors.grey.shade600),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '${lang.t('assignments.dueDate')}: ${_formatDue(a.dueDate)}',
-                                style: TextStyle(color: Colors.grey.shade700),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(Icons.star_outline, size: 18, color: Colors.grey.shade600),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${lang.t('assignments.totalPoints')}: ${a.points}',
-                              style: TextStyle(color: Colors.grey.shade700),
-                            ),
-                          ],
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.star_outline, size: 18, color: Colors.grey.shade600),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${lang.t('assignments.totalPoints')}: ${a.points}',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+            ),
                 if (attachments.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   Card(
@@ -375,51 +444,103 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
                             final s = submissions[i];
                             final st = (s.status ?? '').toLowerCase();
                             final isGraded = st == 'graded' || s.grade != null;
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                              title: Text(s.studentName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              subtitle: Column(
+                            final canGrade = _submissionSupportsGrading(s);
+                            return Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const SizedBox(height: 4),
-                                  Text('${lang.t('assignments.submittedOn')}: ${_formatSubmitted(s.submittedAt)}'),
-                                  if (s.text != null && s.text!.trim().isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        s.text!,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              s.studentName,
+                                              style: const TextStyle(fontWeight: FontWeight.w600),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              '${lang.t('assignments.submittedOn')}: ${_formatSubmitted(s.submittedAt)}',
+                                              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                                            ),
+                                            if (canGrade && s.id.trim().isNotEmpty) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                '${lang.t('assignments.submissionId')}: ${s.id}',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                  fontFamily: 'monospace',
+                                                ),
+                                              ),
+                                            ],
+                                            if (s.text != null && s.text!.trim().isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 4),
+                                                child: Text(
+                                                  s.text!,
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                                ),
+                                              ),
+                                            if (isGraded &&
+                                                s.feedback != null &&
+                                                s.feedback!.trim().isNotEmpty) ...[
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                '${lang.t('assignments.feedback')}: ${s.feedback}',
+                                                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      if (isGraded)
+                                        Chip(
+                                          label: Text(
+                                            '${s.grade ?? '—'}/${a.points}',
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                          ),
+                                          backgroundColor: AppTheme.secondary.withValues(alpha: 0.2),
+                                        ),
+                                    ],
+                                  ),
+                                  if (canGrade) ...[
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: OutlinedButton(
+                                        onPressed: () => _showEnterGradeDialog(
+                                          context,
+                                          lang,
+                                          a,
+                                          s,
+                                          isUpdate: isGraded,
+                                        ),
+                                        child: Text(
+                                          isGraded
+                                              ? lang.t('assignments.updateGrade')
+                                              : lang.t('assignments.enterGrade'),
+                                        ),
+                                      ),
+                                    ),
+                                  ] else if (!isGraded)
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Tooltip(
+                                        message: _gradingUnavailableHint(lang),
+                                        child: OutlinedButton(
+                                          onPressed: null,
+                                          child: Text(lang.t('assignments.enterGrade')),
+                                        ),
                                       ),
                                     ),
                                 ],
                               ),
-                              trailing: isGraded
-                                  ? Chip(
-                                      label: Text(
-                                        '${s.grade ?? '—'}/${a.points}',
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                      ),
-                                      backgroundColor: AppTheme.secondary.withValues(alpha: 0.2),
-                                    )
-                                  : _submissionSupportsGrading(s)
-                                      ? OutlinedButton(
-                                          onPressed: () => _showEnterGradeDialog(
-                                            context,
-                                            lang,
-                                            a,
-                                            s,
-                                          ),
-                                          child: Text(lang.t('assignments.enterGrade')),
-                                        )
-                                      : Tooltip(
-                                          message: _gradingUnavailableHint(lang),
-                                          child: OutlinedButton(
-                                            onPressed: null,
-                                            child: Text(lang.t('assignments.enterGrade')),
-                                          ),
-                                        ),
                             );
                           },
                         ),
@@ -430,8 +551,6 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
             ),
           ),
         );
-      },
-    );
   }
 }
 
@@ -443,6 +562,7 @@ class _EnterGradeDialog extends StatefulWidget {
     required this.assignment,
     required this.submission,
     required this.hostContext,
+    required this.isUpdate,
     required this.onSuccess,
   });
 
@@ -450,7 +570,12 @@ class _EnterGradeDialog extends StatefulWidget {
   final AssignmentEntity assignment;
   final SubmissionEntity submission;
   final BuildContext hostContext;
-  final Future<void> Function() onSuccess;
+  final bool isUpdate;
+  final Future<void> Function({
+    required String submissionId,
+    required int score,
+    required String feedback,
+  }) onSuccess;
 
   @override
   State<_EnterGradeDialog> createState() => _EnterGradeDialogState();
@@ -532,7 +657,13 @@ class _EnterGradeDialogState extends State<_EnterGradeDialog> {
           ),
         ),
       );
-      if (host.mounted) await widget.onSuccess();
+      if (host.mounted) {
+        await widget.onSuccess(
+          submissionId: submission.id,
+          score: result.score ?? scoreParsed,
+          feedback: result.feedback ?? _feedbackCtrl.text.trim(),
+        );
+      }
     } else {
       if (!host.mounted) return;
       final fail = lang.t('assignments.gradeSaveFailed');
@@ -556,7 +687,11 @@ class _EnterGradeDialogState extends State<_EnterGradeDialog> {
     final submission = widget.submission;
 
     return AlertDialog(
-      title: Text(lang.t('assignments.enterGrade')),
+      title: Text(
+        widget.isUpdate
+            ? lang.t('assignments.updateGrade')
+            : lang.t('assignments.enterGrade'),
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -566,6 +701,17 @@ class _EnterGradeDialogState extends State<_EnterGradeDialog> {
               submission.studentName,
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
+            if (submission.id.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${lang.t('assignments.submissionId')}: ${submission.id}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             Text(
               '${lang.t('assignments.score')} (0–${assignment.points})',

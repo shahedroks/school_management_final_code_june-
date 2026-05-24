@@ -57,7 +57,7 @@ class AssignmentsRepositoryImpl implements AssignmentsRepository {
   }
 
   @override
-  Future<({bool ok, String? message})> gradeSubmission({
+  Future<({bool ok, String? message, int? score, String? feedback})> gradeSubmission({
     required String submissionId,
     required int score,
     required String feedback,
@@ -69,6 +69,6 @@ class AssignmentsRepositoryImpl implements AssignmentsRepository {
         feedback: feedback,
       );
     }
-    return (ok: false, message: 'API not configured');
+    return (ok: false, message: 'API not configured', score: null, feedback: null);
   }
 }

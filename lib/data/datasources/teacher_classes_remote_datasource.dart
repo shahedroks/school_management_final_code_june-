@@ -222,6 +222,20 @@ class TeacherClassesRemoteDatasource {
         content = f['url']?.toString() ?? f['path']?.toString() ?? '';
       }
     }
+    String? attachmentMime;
+    String? attachmentName;
+    final firstAtt = _firstAttachmentMap(m);
+    if (firstAtt != null) {
+      if (content.isEmpty) content = firstAtt['url'] ?? '';
+      attachmentMime = firstAtt['mime'];
+      attachmentName = firstAtt['name'];
+      final mimeLower = attachmentMime?.toLowerCase() ?? '';
+      if (mimeLower.contains('pdf')) {
+        type = LessonType.pdf;
+      } else if (mimeLower.contains('video')) {
+        type = LessonType.video;
+      }
+    }
     if (content.isNotEmpty && !content.startsWith('http://') && !content.startsWith('https://')) {
       content = _resolveAssetUrl(content);
     }
@@ -249,7 +263,45 @@ class TeacherClassesRemoteDatasource {
       status: status,
       lastUpdated: lastUpdated.isEmpty ? dateStr : lastUpdated,
       module: module,
+      attachmentMimeType: attachmentMime,
+      attachmentName: attachmentName,
     );
+  }
+
+  static Map<String, String>? _firstAttachmentMap(Map<String, dynamic> m) {
+    final raw = m['attachments'];
+    if (raw is! List || raw.isEmpty) return null;
+    final first = raw.first;
+    if (first is! Map) return null;
+    final fm = Map<String, dynamic>.from(first);
+    final url = fm['url']?.toString() ?? '';
+    if (url.isEmpty) return null;
+    return {
+      'url': url,
+      'mime': fm['mimeType']?.toString() ?? '',
+      'name': fm['originalName']?.toString() ?? 'file',
+    };
+  }
+
+  static List<AssignmentAttachmentEntity> _parseAttachments(dynamic raw) {
+    final attachments = <AssignmentAttachmentEntity>[];
+    if (raw is! List) return attachments;
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final em = Map<String, dynamic>.from(e);
+      final url = em['url']?.toString();
+      final name = em['originalName']?.toString() ?? 'file';
+      final sz = em['size'];
+      attachments.add(
+        AssignmentAttachmentEntity(
+          originalName: name,
+          mimeType: em['mimeType']?.toString(),
+          size: sz is int ? sz : int.tryParse(sz?.toString() ?? ''),
+          url: url != null && url.isNotEmpty ? url : null,
+        ),
+      );
+    }
+    return attachments;
   }
 
   List<AssignmentEntity> _parseAssignmentDetails(dynamic raw, String fallbackClassId) {
@@ -291,6 +343,7 @@ class TeacherClassesRemoteDatasource {
     final g = m['grade'] ?? m['myGrade'];
     final grade = g is int ? g : int.tryParse(g?.toString() ?? '');
     final feedback = m['feedback']?.toString();
+    final attachments = _parseAttachments(m['attachments']);
     return AssignmentEntity(
       id: id,
       classId: classId,
@@ -301,6 +354,7 @@ class TeacherClassesRemoteDatasource {
       status: st,
       grade: grade,
       feedback: feedback,
+      attachments: attachments.isEmpty ? null : attachments,
     );
   }
 

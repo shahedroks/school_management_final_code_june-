@@ -72,214 +72,217 @@ class LayoutWidget extends StatelessWidget {
       }
     }
 
-    return Column(
-      children: [
-        Material(
-          color: Colors.white,
-          elevation: 2,
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  if (canGoBack)
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: AppTheme.primary),
-                      onPressed: onBackPressed,
-                    )
-                  else
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        GariniLogo(
-                          size: 32,
-                          fit: BoxFit.cover,
-                          fallbackColor: AppTheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          AppConstants.appName,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primary,
-                              ),
-                        ),
-                      ],
-                    ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.notifications_outlined, color: AppTheme.primary),
-                    onPressed: () => context.push('/notifications'),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: Tooltip(
-                      message: lang.t('profile.myProfile'),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => context.go(
-                            isStudent ? '/student/profile' : '/teacher/profile',
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: Column(
+        children: [
+          Material(
+            color: Colors.white,
+            elevation: 2,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    if (canGoBack)
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: AppTheme.primary),
+                        onPressed: onBackPressed,
+                      )
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GariniLogo(
+                            size: 32,
+                            fit: BoxFit.cover,
+                            fallbackColor: AppTheme.primary,
                           ),
-                          customBorder: const CircleBorder(),
-                          child: CircleAvatar(
-                            radius: 18,
-                            backgroundColor: AppTheme.primary,
-                            child: Text(
-                              _initials(user.name),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                          const SizedBox(width: 8),
+                          Text(
+                            AppConstants.appName,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primary,
+                                ),
+                          ),
+                        ],
+                      ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.notifications_outlined, color: AppTheme.primary),
+                      onPressed: () => context.push('/notifications'),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Tooltip(
+                        message: lang.t('profile.myProfile'),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => context.go(
+                              isStudent ? '/student/profile' : '/teacher/profile',
+                            ),
+                            customBorder: const CircleBorder(),
+                            child: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppTheme.primary,
+                              child: Text(
+                                _initials(user.name),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, color: AppTheme.primary),
-                    onPressed: () {
-                      final roleLabel = user.role == UserRole.student
-                          ? lang.t('auth.student')
-                          : lang.t('auth.teacher');
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.transparent,
-                        builder: (ctx) => Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 12,
-                                offset: Offset(0, -2),
-                              ),
-                            ],
-                          ),
-                          child: SafeArea(
-                            top: false,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                                  child: Row(
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 24,
-                                        backgroundColor: AppTheme.primary,
-                                        child: Text(
-                                          _initials(user.name),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              user.name,
-                                              style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: const Color(0xFF1A1A1A),
-                                                  ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              roleLabel,
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert, color: AppTheme.primary),
+                      onPressed: () {
+                        final roleLabel = user.role == UserRole.student
+                            ? lang.t('auth.student')
+                            : lang.t('auth.teacher');
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          builder: (ctx) => Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 12,
+                                  offset: Offset(0, -2),
                                 ),
-                                const Divider(height: 1),
-                                ListTile(
-                                  leading: const Icon(Icons.person_outline, color: AppTheme.primary, size: 22),
-                                  title: Text(
-                                    lang.t('profile.myProfile'),
-                                    style: const TextStyle(fontWeight: FontWeight.w500),
-                                  ),
-                                  onTap: () {
-                                    Navigator.pop(ctx);
-                                    context.go(isStudent ? '/student/profile' : '/teacher/profile');
-                                  },
-                                ),
-                                ListTile(
-                                  leading: const Icon(Icons.logout, color: AppTheme.primary, size: 22),
-                                  title: Text(
-                                    lang.t('common.logout'),
-                                    style: const TextStyle(fontWeight: FontWeight.w500),
-                                  ),
-                                  onTap: () async {
-                                    await auth.logout();
-                                    if (ctx.mounted) Navigator.pop(ctx);
-                                    if (context.mounted) context.go('/login');
-                                  },
-                                ),
-                                const SizedBox(height: 8),
                               ],
                             ),
+                            child: SafeArea(
+                              top: false,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 24,
+                                          backgroundColor: AppTheme.primary,
+                                          child: Text(
+                                            _initials(user.name),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                user.name,
+                                                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                                      fontWeight: FontWeight.bold,
+                                                      color: const Color(0xFF1A1A1A),
+                                                    ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                roleLabel,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Divider(height: 1),
+                                  ListTile(
+                                    leading: const Icon(Icons.person_outline, color: AppTheme.primary, size: 22),
+                                    title: Text(
+                                      lang.t('profile.myProfile'),
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                    onTap: () {
+                                      Navigator.pop(ctx);
+                                      context.go(isStudent ? '/student/profile' : '/teacher/profile');
+                                    },
+                                  ),
+                                  ListTile(
+                                    leading: const Icon(Icons.logout, color: AppTheme.primary, size: 22),
+                                    title: Text(
+                                      lang.t('common.logout'),
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                    onTap: () async {
+                                      await auth.logout();
+                                      if (ctx.mounted) Navigator.pop(ctx);
+                                      if (context.mounted) context.go('/login');
+                                    },
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-        Expanded(
-          child: Container(
-            color: const Color(0xFFF8FAFC),
-            child: Padding(padding: const EdgeInsets.all(16), child: child),
-          ),
-        ),
-        Material(
-          color: Colors.white,
-          elevation: 8,
-          child: SafeArea(
-            top: false,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: navItems.map((item) {
-                final isActive = location == item.path || location.startsWith('${item.path}/');
-                return Expanded(
-                  child: InkWell(
-                    onTap: () => context.go(item.path),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(item.icon, size: 24, color: isActive ? AppTheme.primary : Colors.grey),
-                          const SizedBox(height: 4),
-                          Text(item.label, style: TextStyle(fontSize: 10, color: isActive ? AppTheme.primary : Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: child,
             ),
           ),
-        ),
-      ],
+          Material(
+            color: Colors.white,
+            elevation: 8,
+            child: SafeArea(
+              top: false,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: navItems.map((item) {
+                  final isActive = location == item.path || location.startsWith('${item.path}/');
+                  return Expanded(
+                    child: InkWell(
+                      onTap: () => context.go(item.path),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(item.icon, size: 24, color: isActive ? AppTheme.primary : Colors.grey),
+                            const SizedBox(height: 4),
+                            Text(item.label, style: TextStyle(fontSize: 10, color: isActive ? AppTheme.primary : Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

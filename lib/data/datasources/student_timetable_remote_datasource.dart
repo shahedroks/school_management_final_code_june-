@@ -18,6 +18,12 @@ class StudentTimetableRemoteDatasource {
 
   bool get isConfigured => _baseUrl.isNotEmpty;
 
+  static String _minToTimeStr(int minutes) {
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+  }
+
   static const Map<String, String> _dayCodeToEnglish = {
     'sun': 'Sunday',
     'mon': 'Monday',
@@ -96,8 +102,18 @@ class StudentTimetableRemoteDatasource {
             teacherName = teacherMap['name']?.toString() ?? '';
           }
 
-          final startTime = slot['startTime']?.toString() ?? '';
-          final endTime = slot['endTime']?.toString() ?? '';
+          var startTime = slot['startTime']?.toString() ?? '';
+          var endTime = slot['endTime']?.toString() ?? '';
+          if (startTime.isEmpty || endTime.isEmpty) {
+            final startMin = slot['startMin'] is int
+                ? slot['startMin'] as int
+                : int.tryParse(slot['startMin']?.toString() ?? '');
+            final endMin = slot['endMin'] is int
+                ? slot['endMin'] as int
+                : int.tryParse(slot['endMin']?.toString() ?? '');
+            if (startMin != null) startTime = _minToTimeStr(startMin);
+            if (endMin != null) endTime = _minToTimeStr(endMin);
+          }
           final time = (startTime.isNotEmpty && endTime.isNotEmpty)
               ? '$startTime - $endTime'
               : (startTime.isNotEmpty ? startTime : '');

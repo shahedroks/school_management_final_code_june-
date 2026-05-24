@@ -18,6 +18,8 @@ import 'package:high_school/domain/repositories/live_sessions_repository.dart';
 import 'package:high_school/domain/repositories/students_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
 import 'package:high_school/presentation/screens/teacher/teacher_lesson_assignment_dialogs.dart';
+import 'package:high_school/presentation/screens/teacher/teacher_lesson_media_screen.dart';
+import 'package:high_school/presentation/screens/teacher/teacher_pdf_attachment_screen.dart';
 
 class TeacherClassDetailsScreen extends StatefulWidget {
   const TeacherClassDetailsScreen({super.key, required this.classId});
@@ -291,22 +293,108 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
     );
   }
 
+  static bool _mimeOrNameIsPdf(String? mime, String name) {
+    if (mime != null && mime.toLowerCase().contains('pdf')) return true;
+    return name.toLowerCase().endsWith('.pdf');
+  }
+
+  static bool _mimeOrNameIsVideo(String? mime, String name) {
+    final ml = mime?.toLowerCase() ?? '';
+    if (ml.contains('video')) return true;
+    final lower = name.toLowerCase();
+    return lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.endsWith('.mkv');
+  }
+
+  static bool _mimeOrNameIsImage(String? mime, String name) {
+    final ml = mime?.toLowerCase() ?? '';
+    if (ml.startsWith('image/')) return true;
+    final lower = name.toLowerCase();
+    return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp');
+  }
+
+  void _openLessonMedia(BuildContext context, LessonEntity lesson) {
+    final url = lesson.content.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return;
+    final name = (lesson.attachmentName?.trim().isNotEmpty == true)
+        ? lesson.attachmentName!.trim()
+        : _lessonFileNameFromContent(url);
+    if (_mimeOrNameIsPdf(lesson.attachmentMimeType, name) || lesson.type == LessonType.pdf) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (ctx) => TeacherPdfAttachmentScreen(url: url, fileName: name),
+        ),
+      );
+      return;
+    }
+    if (_mimeOrNameIsImage(lesson.attachmentMimeType, name)) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (ctx) => TeacherLessonImageScreen(url: url, title: lesson.title),
+        ),
+      );
+      return;
+    }
+    if (_mimeOrNameIsVideo(lesson.attachmentMimeType, name) || lesson.type == LessonType.video) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (ctx) => TeacherLessonVideoScreen(url: url, title: lesson.title),
+        ),
+      );
+      return;
+    }
+    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  void _openAssignmentAttachment(BuildContext context, AssignmentAttachmentEntity att) {
+    final url = att.url;
+    if (url == null || url.isEmpty) return;
+    final name = att.originalName;
+    if (_mimeOrNameIsPdf(att.mimeType, name)) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (ctx) => TeacherPdfAttachmentScreen(url: url, fileName: name),
+        ),
+      );
+      return;
+    }
+    if (_mimeOrNameIsVideo(att.mimeType, name)) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (ctx) => TeacherLessonVideoScreen(url: url, title: name),
+        ),
+      );
+      return;
+    }
+    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
   Widget _lessonCard(BuildContext context, LanguageProvider lang, ClassEntity cls, LessonEntity lesson) {
     final typeStr = lesson.type == LessonType.video ? 'Video' : (lesson.type == LessonType.pdf ? 'PDF' : 'Text');
     final content = lesson.content.trim();
     final isUrl = content.startsWith('http://') || content.startsWith('https://');
-    final fileName = _lessonFileNameFromContent(content);
-    final showPdfRow = lesson.type == LessonType.pdf && content.isNotEmpty;
-    final showLinkRow = content.isNotEmpty && !showPdfRow;
+    final fileName = lesson.attachmentName?.trim().isNotEmpty == true
+        ? lesson.attachmentName!.trim()
+        : _lessonFileNameFromContent(content);
+    final showMediaRow = isUrl;
     final dateLabel = lesson.date.isNotEmpty ? _formatDate(lesson.date) : (lesson.lastUpdated.isNotEmpty ? _formatDate(lesson.lastUpdated) : '—');
     final updatedLabel = lesson.lastUpdated.isNotEmpty ? _formatDate(lesson.lastUpdated) : dateLabel;
-
-    Future<void> openContent() async {
-      if (!isUrl) return;
-      try {
-        await launchUrl(Uri.parse(content), mode: LaunchMode.externalApplication);
-      } catch (_) {}
-    }
+    final isPdf = _mimeOrNameIsPdf(lesson.attachmentMimeType, fileName) || lesson.type == LessonType.pdf;
+    final isImage = _mimeOrNameIsImage(lesson.attachmentMimeType, fileName);
+    final isVideo = !isImage && (_mimeOrNameIsVideo(lesson.attachmentMimeType, fileName) || lesson.type == LessonType.video);
+    final mediaLabel = isPdf
+        ? tr(lang, 'assignments.viewPdf', 'View PDF')
+        : isVideo
+            ? tr(lang, 'lessons.watchVideo', 'Watch Video')
+            : isImage
+                ? tr(lang, 'common.view', 'View')
+                : tr(lang, 'common.view', 'View');
+    final mediaIcon = isPdf
+        ? Icons.picture_as_pdf_outlined
+        : isVideo
+            ? Icons.play_circle_outline
+            : isImage
+                ? Icons.image_outlined
+                : Icons.attach_file;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -356,45 +444,46 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
               const SizedBox(height: 10),
               Text(lesson.description, style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.35), maxLines: 4, overflow: TextOverflow.ellipsis),
             ],
-            if (showLinkRow) ...[
+            if (showMediaRow) ...[
               const SizedBox(height: 8),
-              InkWell(
-                onTap: isUrl ? openContent : null,
-                borderRadius: BorderRadius.circular(4),
-                child: Row(
-                  children: [
-                    Icon(Icons.link, size: 16, color: AppTheme.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        isUrl ? _shortLinkDisplay(content) : content,
-                        style: TextStyle(fontSize: 13, color: AppTheme.primary, decoration: isUrl ? TextDecoration.underline : TextDecoration.none),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+              Material(
+                color: AppTheme.primary.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  onTap: () => _openLessonMedia(context, lesson),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Row(
+                      children: [
+                        Icon(mediaIcon, size: 22, color: AppTheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                fileName.isNotEmpty ? fileName : mediaLabel,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.primary,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                mediaLabel,
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.visibility_outlined, size: 20, color: AppTheme.primary),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ],
-            if (showPdfRow) ...[
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: isUrl ? openContent : null,
-                borderRadius: BorderRadius.circular(4),
-                child: Row(
-                  children: [
-                    Icon(Icons.description_outlined, size: 18, color: AppTheme.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        fileName.isNotEmpty ? fileName : 'document.pdf',
-                        style: TextStyle(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w600, decoration: isUrl ? TextDecoration.underline : TextDecoration.none),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -586,18 +675,6 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
     return content.length > 48 ? '${content.substring(0, 45)}…' : content;
   }
 
-  static String _shortLinkDisplay(String url) {
-    try {
-      final u = Uri.parse(url);
-      if (u.pathSegments.isNotEmpty) {
-        final last = u.pathSegments.last;
-        if (last.isNotEmpty) return last.length > 40 ? '${last.substring(0, 37)}…' : last;
-      }
-      if (u.host.isNotEmpty) return u.host.length > 36 ? '${u.host.substring(0, 33)}…' : u.host;
-    } catch (_) {}
-    return url.length > 42 ? '${url.substring(0, 39)}…' : url;
-  }
-
   Widget _badge(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -742,6 +819,69 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
                 ),
               ],
             ),
+            if (a.attachments != null && a.attachments!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                tr(lang, 'assignments.attachments', 'Attachments'),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 6),
+              ...a.attachments!.where((att) => att.url != null && att.url!.isNotEmpty).map(
+                    (att) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Material(
+                        color: AppTheme.primary.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(10),
+                        child: InkWell(
+                          onTap: () => _openAssignmentAttachment(context, att),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _mimeOrNameIsPdf(att.mimeType, att.originalName)
+                                      ? Icons.picture_as_pdf_outlined
+                                      : _mimeOrNameIsVideo(att.mimeType, att.originalName)
+                                          ? Icons.play_circle_outline
+                                          : Icons.insert_drive_file_outlined,
+                                  size: 22,
+                                  color: AppTheme.primary,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        att.originalName,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.primary,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _mimeOrNameIsPdf(att.mimeType, att.originalName)
+                                            ? tr(lang, 'assignments.viewPdf', 'View PDF')
+                                            : tr(lang, 'common.view', 'View'),
+                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(Icons.visibility_outlined, size: 20, color: AppTheme.primary),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Divider(height: 1, thickness: 1, color: Colors.grey.shade200),

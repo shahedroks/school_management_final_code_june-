@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:high_school/core/theme/app_theme.dart';
 import 'package:high_school/data/datasources/student_lesson_remote_datasource.dart';
 import 'package:high_school/domain/entities/lesson_entity.dart';
 import 'package:high_school/domain/entities/student_lesson_detail.dart';
 import 'package:high_school/domain/repositories/lessons_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
+import 'package:high_school/presentation/screens/teacher/teacher_pdf_attachment_screen.dart';
 import 'package:high_school/presentation/widgets/lesson_video_player.dart';
 
 class LessonDetailsScreen extends StatefulWidget {
@@ -79,12 +79,29 @@ class _LessonDetailsScreenState extends State<LessonDetailsScreen> {
     }
   }
 
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
+  static String _pdfFileName(StudentLessonDetail lesson, String url) {
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final seg = Uri.parse(url).pathSegments.lastWhere(
+            (s) => s.isNotEmpty,
+            orElse: () => '',
+          );
+      if (seg.toLowerCase().endsWith('.pdf')) {
+        return Uri.decodeComponent(seg);
+      }
     } catch (_) {}
+    final title = lesson.title.trim();
+    return title.isEmpty ? 'lesson.pdf' : '$title.pdf';
+  }
+
+  void _openPdfViewer(BuildContext context, StudentLessonDetail lesson, String url) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (ctx) => TeacherPdfAttachmentScreen(
+          url: url,
+          fileName: _pdfFileName(lesson, url),
+        ),
+      ),
+    );
   }
 
   @override
@@ -302,7 +319,11 @@ class _LessonDetailsScreenState extends State<LessonDetailsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () => _openUrl(primaryUrl),
+                    onPressed: () => downloadTeacherPdfAttachment(
+                      context,
+                      primaryUrl,
+                      _pdfFileName(lesson, primaryUrl),
+                    ),
                     icon: const Icon(Icons.download_outlined, size: 18),
                     label: Text(lang.t('lessons.downloadPDF')),
                   ),
@@ -311,12 +332,12 @@ class _LessonDetailsScreenState extends State<LessonDetailsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () => _openUrl(primaryUrl),
+                    onPressed: () => _openPdfViewer(context, lesson, primaryUrl),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
                       foregroundColor: Colors.white,
                     ),
-                    icon: const Icon(Icons.open_in_new, size: 18),
+                    icon: const Icon(Icons.visibility_outlined, size: 18),
                     label: Text(lang.t('lessons.viewPdf')),
                   ),
                 ),

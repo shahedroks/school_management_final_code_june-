@@ -10,6 +10,7 @@ import 'package:high_school/domain/repositories/assignments_repository.dart';
 import 'package:high_school/domain/repositories/classes_repository.dart';
 import 'package:high_school/domain/repositories/student_assignment_details_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
+import 'package:high_school/presentation/screens/teacher/teacher_pdf_attachment_screen.dart';
 
 class _AssignmentScreenData {
   const _AssignmentScreenData({
@@ -111,6 +112,23 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } catch (_) {}
+  }
+
+  void _openAttachment(BuildContext context, AssignmentAttachmentEntity att) {
+    final url = att.url;
+    if (url == null || url.isEmpty) return;
+    if (_isPdfAttachment(att)) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (ctx) => TeacherPdfAttachmentScreen(
+            url: url,
+            fileName: att.originalName,
+          ),
+        ),
+      );
+      return;
+    }
+    _openAttachmentUrl(url);
   }
 
   String _formatDate(String dateStr) {
@@ -497,7 +515,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _openAttachmentUrl(att.url!),
+        onTap: () => _openAttachment(context, att),
         borderRadius: BorderRadius.circular(10),
         child: Ink(
           decoration: BoxDecoration(
@@ -558,7 +576,11 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                     color: AppTheme.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.open_in_new_rounded, size: 18, color: AppTheme.primary),
+                  child: Icon(
+                    isPdf ? Icons.visibility_outlined : Icons.open_in_new_rounded,
+                    size: 18,
+                    color: AppTheme.primary,
+                  ),
                 ),
               ],
             ),

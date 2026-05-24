@@ -256,17 +256,17 @@ class AssignmentsRemoteDatasource {
   }
 
   /// PATCH /submission/submissions/:submissionId/grade — body: `{ score, feedback }`.
-  Future<({bool ok, String? message})> gradeSubmission({
+  Future<({bool ok, String? message, int? score, String? feedback})> gradeSubmission({
     required String submissionId,
     required int score,
     required String feedback,
   }) async {
     if (!isConfigured || submissionId.trim().isEmpty) {
-      return (ok: false, message: 'API not configured');
+      return (ok: false, message: 'API not configured', score: null, feedback: null);
     }
     final token = _prefs.getString(AppConstants.sessionTokenKey);
     if (token == null || token.isEmpty) {
-      return (ok: false, message: 'Not signed in');
+      return (ok: false, message: 'Not signed in', score: null, feedback: null);
     }
 
     final uri = Uri.parse(
@@ -308,18 +308,49 @@ class AssignmentsRemoteDatasource {
             (decoded?['status']?.toString().toLowerCase() == 'success') ||
             (decoded?['data'] != null);
         if (success || decoded == null) {
-          return (ok: true, message: null);
+          var savedScore = score;
+          var savedFeedback = feedback.trim();
+          final data = decoded?['data'];
+          if (data is Map) {
+            final dm = Map<String, dynamic>.from(data);
+            savedScore = _parseGradeScore(dm['grade'] ?? dm['score']) ?? score;
+            savedFeedback = _parseGradeFeedback(dm) ?? savedFeedback;
+          }
+          return (ok: true, message: null, score: savedScore, feedback: savedFeedback);
         }
       }
 
       final msg = decoded?['message']?.toString() ??
           (raw.isNotEmpty ? raw : 'Request failed ($code)');
-      return (ok: false, message: msg);
+      return (ok: false, message: msg, score: null, feedback: null);
     } on UnauthorizedApiException {
-      return (ok: false, message: 'Unauthorized');
+      return (ok: false, message: 'Unauthorized', score: null, feedback: null);
     } catch (e) {
-      return (ok: false, message: e.toString());
+      return (ok: false, message: e.toString(), score: null, feedback: null);
     }
+  }
+
+  /// API may return `grade` as a number or as `{ score, feedback, ... }`.
+  static int? _parseGradeScore(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is int) return raw;
+    if (raw is num) return raw.round();
+    if (raw is Map) {
+      final gm = Map<String, dynamic>.from(raw);
+      return _parseGradeScore(gm['score'] ?? gm['grade']);
+    }
+    return int.tryParse(raw.toString());
+  }
+
+  static String? _parseGradeFeedback(Map<String, dynamic> m) {
+    final top = m['feedback']?.toString();
+    if (top != null && top.isNotEmpty) return top;
+    final g = m['grade'];
+    if (g is Map) {
+      final fb = Map<String, dynamic>.from(g)['feedback']?.toString();
+      if (fb != null && fb.isNotEmpty) return fb;
+    }
+    return null;
   }
 
   static SubmissionEntity? _parseTeacherSubmission(Map<String, dynamic> m, String assignmentId) {
@@ -339,17 +370,7 @@ class AssignmentsRemoteDatasource {
     final submittedAt = m['submittedAt']?.toString() ?? '';
     if (subId.isEmpty && submittedAt.isEmpty && studentId.isEmpty) return null;
 
-    final g = m['grade'] ?? m['score'];
-    int? gradeVal;
-    if (g != null) {
-      if (g is int) {
-        gradeVal = g;
-      } else if (g is num) {
-        gradeVal = g.round();
-      } else {
-        gradeVal = int.tryParse(g.toString());
-      }
-    }
+    final gradeVal = _parseGradeScore(m['grade'] ?? m['score']);
 
     String? fileUrl;
     final file = m['file'];
@@ -367,7 +388,7 @@ class AssignmentsRemoteDatasource {
       submittedAt: submittedAt.isNotEmpty ? submittedAt : '—',
       status: m['status']?.toString(),
       grade: gradeVal,
-      feedback: m['feedback']?.toString(),
+      feedback: _parseGradeFeedback(m),
     );
   }
 

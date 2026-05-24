@@ -9,31 +9,34 @@ import 'package:high_school/presentation/providers/language_provider.dart';
 class TimetableScreen extends StatelessWidget {
   const TimetableScreen({super.key});
 
-  static const List<String> _dayKeys = [
-    'monday',
-    'tuesday',
-    'wednesday',
-    'thursday',
-    'friday',
+  /// Matches API `groupedByDay` order (sun → sat).
+  static const List<({String code, String l10nKey, String english})> _weekDays = [
+    (code: 'sun', l10nKey: 'sunday', english: 'Sunday'),
+    (code: 'mon', l10nKey: 'monday', english: 'Monday'),
+    (code: 'tue', l10nKey: 'tuesday', english: 'Tuesday'),
+    (code: 'wed', l10nKey: 'wednesday', english: 'Wednesday'),
+    (code: 'thu', l10nKey: 'thursday', english: 'Thursday'),
+    (code: 'fri', l10nKey: 'friday', english: 'Friday'),
+    (code: 'sat', l10nKey: 'saturday', english: 'Saturday'),
   ];
 
-  static const List<String> _englishDays = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-  ];
-
-  static const Map<String, String> _dayCodeToEnglish = {
-    'sun': 'Sunday',
-    'mon': 'Monday',
-    'tue': 'Tuesday',
-    'wed': 'Wednesday',
-    'thu': 'Thursday',
-    'fri': 'Friday',
-    'sat': 'Saturday',
+  static const Map<int, String> _weekdayToCode = {
+    DateTime.sunday: 'sun',
+    DateTime.monday: 'mon',
+    DateTime.tuesday: 'tue',
+    DateTime.wednesday: 'wed',
+    DateTime.thursday: 'thu',
+    DateTime.friday: 'fri',
+    DateTime.saturday: 'sat',
   };
+
+  static String? _englishDayForCode(String? code) {
+    if (code == null) return null;
+    for (final d in _weekDays) {
+      if (d.code == code) return d.english;
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,12 +51,9 @@ class TimetableScreen extends StatelessWidget {
         final result = snapshot.data!;
         final allEntries = result.entries;
         final now = DateTime.now();
-        // Use API today when available; otherwise device weekday (Mon–Fri only)
         final String? todayEnglish = result.todayDayCode != null
-            ? _dayCodeToEnglish[result.todayDayCode!]
-            : (now.weekday >= DateTime.monday && now.weekday <= DateTime.friday)
-                ? _englishDays[now.weekday - DateTime.monday]
-                : null;
+            ? _englishDayForCode(result.todayDayCode)
+            : _englishDayForCode(_weekdayToCode[now.weekday]);
 
         return SingleChildScrollView(
           padding: const EdgeInsets.only(bottom: 24),
@@ -102,11 +102,11 @@ class TimetableScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            // Day cards (Monday .. Friday)
-            ...List.generate(_dayKeys.length, (i) {
-              final dayKey = _dayKeys[i];
-              final englishDay = _englishDays[i];
-              final dayLabel = lang.t('timetable.$dayKey');
+            // Day cards (Sunday .. Saturday — matches API groupedByDay)
+            ...List.generate(_weekDays.length, (i) {
+              final day = _weekDays[i];
+              final englishDay = day.english;
+              final dayLabel = lang.t('timetable.${day.l10nKey}');
               final entries = allEntries
                   .where((e) => e.day == englishDay)
                   .toList()

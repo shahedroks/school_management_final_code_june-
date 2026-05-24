@@ -13,6 +13,9 @@ class LessonEntity {
   final LessonStatus status;
   final String lastUpdated;
   final String? module;
+  /// First attachment from API `attachments[]` (url is also in [content] when set).
+  final String? attachmentMimeType;
+  final String? attachmentName;
 
   const LessonEntity({
     required this.id,
@@ -26,5 +29,7 @@ class LessonEntity {
     required this.status,
     required this.lastUpdated,
     this.module,
+    this.attachmentMimeType,
+    this.attachmentName,
   });
 }
