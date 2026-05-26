@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/entities/timetable_entity.dart';
@@ -648,7 +649,8 @@ class TeacherDashboardScreen extends StatelessWidget {
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600)),
                                   const SizedBox(height: 6),
-                                  Text('${s.date ?? ''} • ${s.time ?? ''}',
+                                  Text(
+                                      '${AppDateFormat.date(s.date)} • ${s.time ?? ''}',
                                       style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey.shade600)),
@@ -1024,7 +1026,8 @@ class TeacherDashboardScreen extends StatelessWidget {
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600)),
                                   const SizedBox(height: 6),
-                                  Text('${s.date} • ${s.time}',
+                                  Text(
+                                      '${AppDateFormat.date(s.date)} • ${s.time}',
                                       style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey.shade600)),
@@ -1285,27 +1288,9 @@ class TeacherDashboardScreen extends StatelessWidget {
   }
 
   String _formatSubmittedDate(String iso) {
-    try {
-      final d = DateTime.tryParse(iso);
-      if (d != null) {
-        const months = [
-          'Jan',
-          'Feb',
-          'Mar',
-          'Apr',
-          'May',
-          'Jun',
-          'Jul',
-          'Aug',
-          'Sep',
-          'Oct',
-          'Nov',
-          'Dec'
-        ];
-        return 'Submitted ${months[d.month - 1]} ${d.day}';
-      }
-    } catch (_) {}
-    return 'Submitted';
+    final formatted = AppDateFormat.shortDate(iso);
+    if (formatted.isEmpty) return 'Submitted';
+    return 'Submitted $formatted';
   }
 }
 

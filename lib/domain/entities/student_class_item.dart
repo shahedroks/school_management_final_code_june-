@@ -1,3 +1,4 @@
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 
 /// One item from GET /classes/student/my.
@@ -74,27 +75,15 @@ class StudentClassItem {
     if (schedule == null) return '';
     if (schedule is String) return schedule;
     if (schedule is! List || schedule.isEmpty) return '';
-    const dayNames = {'sun': 'Sun', 'mon': 'Mon', 'tue': 'Tue', 'wed': 'Wed', 'thu': 'Thu', 'fri': 'Fri', 'sat': 'Sat'};
     final parts = <String>[];
     for (final e in schedule) {
       final map = e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map);
       final day = (map['day']?.toString() ?? '').toLowerCase();
       final startMin = map['startMin'] is int ? map['startMin'] as int : int.tryParse(map['startMin']?.toString() ?? '') ?? 0;
       final endMin = map['endMin'] is int ? map['endMin'] as int : int.tryParse(map['endMin']?.toString() ?? '') ?? 0;
-      final startTime = _minToTimeStr(startMin);
-      final endTime = _minToTimeStr(endMin);
-      final dayLabel = dayNames[day] ?? day;
-      parts.add('$dayLabel $startTime - $endTime');
+      parts.add(AppDateFormat.scheduleSlot(day: day, startMin: startMin, endMin: endMin));
     }
     return parts.join(', ');
-  }
-
-  static String _minToTimeStr(int minFromMidnight) {
-    final h = minFromMidnight ~/ 60;
-    final m = minFromMidnight % 60;
-    final hour = h > 12 ? h - 12 : (h == 0 ? 12 : h);
-    final ampm = h >= 12 ? 'PM' : 'AM';
-    return '$hour:${m.toString().padLeft(2, '0')} $ampm';
   }
 
   /// Map to ClassEntity for use with existing classes list UI.

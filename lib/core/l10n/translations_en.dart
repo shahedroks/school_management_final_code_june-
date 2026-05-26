@@ -306,6 +306,23 @@ const Map<String, dynamic> translationsEn = {
     'pdfDownloaded': 'File saved. Opening…',
     'pdfDownloadFailed': 'Could not save the file.',
     'removeFile': 'Remove file',
+    'resubmit': 'Resubmit',
+    'resubmitAssignment': 'Resubmit Assignment',
+    'previousSubmission': 'Previous Submission',
+    'resubmitConfirmTitle': 'Replace previous submission?',
+    'resubmitConfirmBody':
+        "Are you sure you want to replace your previous submission? Once your teacher grades it, you won't be able to resubmit.",
+    'replace': 'Replace',
+    'cancel': 'Cancel',
+    'submissionGradedBannerTitle': 'Your submission has been graded',
+    'submissionGradedBannerBody': 'Score: {score} / {points}',
+    'submissionGradedBannerFeedback': 'Feedback: {feedback}',
+    'assignmentClosedBanner': 'This assignment is closed',
+    'deadlinePassedBanner': 'Submission deadline has passed',
+    'lateSubmissionAllowedBanner': 'Late submission allowed',
+    'alreadyGradedToast':
+        'Your teacher has already graded your submission — you can no longer resubmit.',
+    'submissionStatus': 'Submission Status',
   },
   'live': {
     'liveSessions': 'Live Sessions',

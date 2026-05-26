@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/assignment_entity.dart';
 import 'package:high_school/domain/repositories/assignments_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
@@ -117,24 +118,14 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
 
   String _formatDue(String iso) {
     if (iso.isEmpty) return '—';
-    try {
-      final d = DateTime.parse(iso).toLocal();
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${months[d.month - 1]} ${d.day}, ${d.year} · ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return iso;
-    }
+    final f = AppDateFormat.dateTime(iso);
+    return f.isEmpty ? iso : f;
   }
 
   String _formatSubmitted(String iso) {
     if (iso.isEmpty || iso == '—') return iso;
-    try {
-      final d = DateTime.parse(iso).toLocal();
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${months[d.month - 1]} ${d.day}, ${d.year}';
-    } catch (_) {
-      return iso;
-    }
+    final f = AppDateFormat.date(iso);
+    return f.isEmpty ? iso : f;
   }
 
   Future<void> _openUrl(String url) async {

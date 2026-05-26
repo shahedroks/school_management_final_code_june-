@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/assignment_entity.dart';
 import 'package:high_school/domain/repositories/assignments_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
@@ -9,14 +10,8 @@ class AssignmentsListScreen extends StatelessWidget {
   const AssignmentsListScreen({super.key});
 
   static String _formatDueDate(String dueDateStr) {
-    try {
-      final d = DateTime.tryParse(dueDateStr);
-      if (d == null) return dueDateStr;
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${months[d.month - 1]} ${d.day}, ${d.year}';
-    } catch (_) {
-      return dueDateStr;
-    }
+    final f = AppDateFormat.date(dueDateStr);
+    return f.isEmpty ? dueDateStr : f;
   }
 
   static String _statusLabel(LanguageProvider lang, AssignmentStatus status) {

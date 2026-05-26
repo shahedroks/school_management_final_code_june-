@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/repositories/teacher_classes_repository.dart';
 import 'package:high_school/presentation/providers/auth_provider.dart';
@@ -254,12 +255,11 @@ class _TeacherClassesListScreenState extends State<TeacherClassesListScreen> {
   static const Color _gradePillText = Color(0xFF1B5E20);
   static const Color _cardMetaText = Color(0xFF5C6B8A);
 
-  /// Format schedule for display. Converts API raw format e.g. [{day: sat, startMin: 540, endMin: 600}] to "Sat 9:00 AM - 10:00 AM".
+  /// Format schedule for display. Converts API raw format e.g. [{day: sat, startMin: 540, endMin: 600}] to "sam. 09:00 - 10:00".
   static String _formatSchedule(String? raw) {
     if (raw == null || raw.trim().isEmpty) return '—';
     final s = raw.trim();
     if (!s.startsWith('[') || (!s.contains('startMin') && !s.contains('startTime'))) return s;
-    const dayNames = {'sun': 'Sun', 'mon': 'Mon', 'tue': 'Tue', 'wed': 'Wed', 'thu': 'Thu', 'fri': 'Fri', 'sat': 'Sat'};
     try {
       final list = jsonDecode(s) as List<dynamic>?;
       if (list != null && list.isNotEmpty) {
@@ -269,10 +269,7 @@ class _TeacherClassesListScreenState extends State<TeacherClassesListScreen> {
           final day = (map['day']?.toString() ?? '').toLowerCase();
           final startMin = map['startMin'] is int ? map['startMin'] as int : int.tryParse(map['startMin']?.toString() ?? '') ?? 0;
           final endMin = map['endMin'] is int ? map['endMin'] as int : int.tryParse(map['endMin']?.toString() ?? '') ?? 0;
-          final startTime = _minToTimeStr(startMin);
-          final endTime = _minToTimeStr(endMin);
-          final dayLabel = dayNames[day] ?? day;
-          parts.add('$dayLabel $startTime - $endTime');
+          parts.add(AppDateFormat.scheduleSlot(day: day, startMin: startMin, endMin: endMin));
         }
         return parts.join(', ');
       }
@@ -284,20 +281,11 @@ class _TeacherClassesListScreenState extends State<TeacherClassesListScreen> {
         final day = m.group(1)!.toLowerCase();
         final startMin = int.tryParse(m.group(2) ?? '') ?? 0;
         final endMin = int.tryParse(m.group(3) ?? '') ?? 0;
-        final dayLabel = dayNames[day] ?? day;
-        return '$dayLabel ${_minToTimeStr(startMin)} - ${_minToTimeStr(endMin)}';
+        return AppDateFormat.scheduleSlot(day: day, startMin: startMin, endMin: endMin);
       }).toList();
       return parts.join(', ');
     }
     return s;
-  }
-
-  static String _minToTimeStr(int minFromMidnight) {
-    final h = minFromMidnight ~/ 60;
-    final m = minFromMidnight % 60;
-    final hour = h > 12 ? h - 12 : (h == 0 ? 12 : h);
-    final ampm = h >= 12 ? 'PM' : 'AM';
-    return '$hour:${m.toString().padLeft(2, '0')} $ampm';
   }
 
   Widget _buildClassesList(

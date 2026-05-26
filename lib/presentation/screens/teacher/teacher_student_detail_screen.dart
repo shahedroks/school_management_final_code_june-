@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/data/datasources/mock_data.dart';
 import 'package:high_school/domain/entities/teacher_roster_student_entity.dart';
 import 'package:high_school/domain/repositories/teacher_students_repository.dart';
@@ -247,10 +248,8 @@ class _TeacherStudentDetailScreenState extends State<TeacherStudentDetailScreen>
         : 0;
     var lastActivityStr = progress.lastActivity.trim().isEmpty ? '—' : progress.lastActivity;
     if (progress.lastActivity.trim().isNotEmpty) {
-      try {
-        final d = DateTime.parse(progress.lastActivity);
-        lastActivityStr = '${_monthShort(d.month)} ${d.day}, ${d.year}';
-      } catch (_) {}
+      final formatted = AppDateFormat.date(progress.lastActivity);
+      if (formatted.isNotEmpty) lastActivityStr = formatted;
     }
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.2))),
@@ -303,11 +302,6 @@ class _TeacherStudentDetailScreenState extends State<TeacherStudentDetailScreen>
         ],
       ),
     );
-  }
-
-  String _monthShort(int m) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return months[m - 1];
   }
 
   Widget _progressRow(BuildContext context, String label, String trailing, double value) {
@@ -431,10 +425,8 @@ class _TeacherStudentDetailScreenState extends State<TeacherStudentDetailScreen>
     else if (r.status == 'late') { icon = Icons.schedule; color = Colors.amber; }
     else if (r.status == 'excused') { icon = Icons.warning_amber; color = AppTheme.primary; }
     String dateStr = r.date;
-    try {
-      final d = DateTime.parse(r.date);
-      dateStr = '${_monthShort(d.month)} ${d.day}, ${d.year}';
-    } catch (_) {}
+    final formatted = AppDateFormat.date(r.date);
+    if (formatted.isNotEmpty) dateStr = formatted;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
@@ -512,10 +504,8 @@ class _TeacherStudentDetailScreenState extends State<TeacherStudentDetailScreen>
                       }
                       var dueStr = a.dueAt ?? '';
                       if (dueStr.isNotEmpty) {
-                        try {
-                          final d = DateTime.parse(dueStr);
-                          dueStr = '${_monthShort(d.month)} ${d.day}';
-                        } catch (_) {}
+                        final f = AppDateFormat.shortDate(dueStr);
+                        if (f.isNotEmpty) dueStr = f;
                       } else {
                         dueStr = '—';
                       }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/data/datasources/student_lesson_remote_datasource.dart';
 import 'package:high_school/domain/entities/lesson_entity.dart';
 import 'package:high_school/domain/entities/student_lesson_detail.dart';
@@ -47,14 +47,10 @@ class _LessonDetailsScreenState extends State<LessonDetailsScreen> {
     return '';
   }
 
-  static String? _formatDate(String iso, String localeCode) {
+  static String? _formatDate(String iso) {
     if (iso.trim().isEmpty) return null;
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      return DateFormat.yMMMd(localeCode).format(dt);
-    } catch (_) {
-      return null;
-    }
+    final formatted = AppDateFormat.date(iso);
+    return formatted.isEmpty ? null : formatted;
   }
 
   static IconData _typeIcon(LessonType t) {
@@ -107,7 +103,6 @@ class _LessonDetailsScreenState extends State<LessonDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
-    final locale = Localizations.localeOf(context).toLanguageTag();
 
     return FutureBuilder<StudentLessonDetail?>(
       future: _future,
@@ -130,7 +125,7 @@ class _LessonDetailsScreenState extends State<LessonDetailsScreen> {
         }
 
         final type = lesson.lessonType;
-        final dateStr = _formatDate(lesson.dateIso, locale);
+        final dateStr = _formatDate(lesson.dateIso);
         final primaryUrl = lesson.fileUrls.isNotEmpty ? lesson.fileUrls.first : null;
 
         return SingleChildScrollView(

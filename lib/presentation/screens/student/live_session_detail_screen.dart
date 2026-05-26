@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/repositories/classes_repository.dart';
@@ -21,19 +22,8 @@ class LiveSessionDetailScreen extends StatelessWidget {
   final LiveSessionEntity? passedSession;
 
   static String _formatSessionDate(String dateStr) {
-    try {
-      final d = DateTime.tryParse(dateStr);
-      if (d != null) return '${d.month}/${d.day}/${d.year}';
-      final parts = dateStr.split('-');
-      if (parts.length >= 3) {
-        final y = int.tryParse(parts[0]);
-        final m = int.tryParse(parts[1]);
-        final day = parts[2].length > 2 ? parts[2].substring(0, 2) : parts[2];
-        final d = int.tryParse(day);
-        if (m != null && d != null && y != null) return '$m/$d/$y';
-      }
-    } catch (_) {}
-    return dateStr;
+    final f = AppDateFormat.date(dateStr);
+    return f.isEmpty ? dateStr : f;
   }
 
   @override

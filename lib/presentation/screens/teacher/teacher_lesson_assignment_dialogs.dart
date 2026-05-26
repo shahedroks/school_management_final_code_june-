@@ -514,6 +514,7 @@ void showTeacherCreateLessonDialog(
                             initialDate: teacherParseYmd(date),
                             firstDate: DateTime(2000),
                             lastDate: DateTime(2100),
+                            locale: const Locale('fr', 'FR'),
                           );
                           if (picked != null) {
                             setDialogState(() {
@@ -1011,6 +1012,7 @@ void showTeacherCreateAssignmentDialog(
                             initialDate: teacherParseYmd(dueDate),
                             firstDate: DateTime(2000),
                             lastDate: DateTime(2100),
+                            locale: const Locale('fr', 'FR'),
                           );
                           if (picked != null) {
                             setDialogState(() {
@@ -1045,6 +1047,11 @@ void showTeacherCreateAssignmentDialog(
                           final picked = await showTimePicker(
                             context: ctx,
                             initialTime: initial,
+                            builder: (innerCtx, child) => Localizations.override(
+                              context: innerCtx,
+                              locale: const Locale('fr', 'FR'),
+                              child: child,
+                            ),
                           );
                           if (picked != null) {
                             setDialogState(() {

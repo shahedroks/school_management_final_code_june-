@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/assignment_detail_result.dart';
 import 'package:high_school/domain/entities/assignment_entity.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
+import 'package:high_school/domain/entities/my_submission_status.dart';
 import 'package:high_school/domain/repositories/assignments_repository.dart';
 import 'package:high_school/domain/repositories/classes_repository.dart';
 import 'package:high_school/domain/repositories/student_assignment_details_repository.dart';
@@ -17,23 +19,12 @@ class _AssignmentScreenData {
     required this.assignment,
     required this.classData,
     required this.apiResult,
+    required this.mySubmission,
   });
   final AssignmentEntity? assignment;
   final ClassEntity? classData;
   final AssignmentDetailResult? apiResult;
-}
-
-class _ApiSubmission {
-  const _ApiSubmission({
-    required this.hasSubmission,
-    this.submittedAt,
-    this.submissionFileUrl,
-    this.submissionFileName,
-  });
-  final bool hasSubmission;
-  final String? submittedAt;
-  final String? submissionFileUrl;
-  final String? submissionFileName;
+  final MySubmissionStatus? mySubmission;
 }
 
 class AssignmentDetailsScreen extends StatefulWidget {
@@ -55,7 +46,20 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
   String _submissionText = '';
   String? _selectedFileName;
   String? _selectedFilePath;
-  bool _submitted = false;
+  bool _submitting = false;
+
+  /// Bump to force [FutureBuilder] to re-run the loader after a submit.
+  int _reloadTick = 0;
+
+  void _reload() {
+    if (!mounted) return;
+    setState(() {
+      _reloadTick++;
+      _submissionText = '';
+      _selectedFileName = null;
+      _selectedFilePath = null;
+    });
+  }
 
   static bool _isPdfFileName(String name) {
     return name.toLowerCase().trim().endsWith('.pdf');
@@ -131,17 +135,9 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     _openAttachmentUrl(url);
   }
 
-  String _formatDate(String dateStr) {
-    try {
-      final parts = dateStr.split('-');
-      if (parts.length >= 3) {
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        final m = int.tryParse(parts[1]);
-        final d = parts[2].length > 2 ? parts[2].substring(0, 2) : parts[2];
-        if (m != null && m >= 1 && m <= 12) return '${months[m - 1]} $d';
-      }
-    } catch (_) {}
-    return dateStr;
+  String _formatDateTime(String dateStr) {
+    final formatted = AppDateFormat.dateTime(dateStr);
+    return formatted.isEmpty ? dateStr : formatted;
   }
 
   @override
@@ -160,6 +156,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     );
 
     return FutureBuilder<_AssignmentScreenData>(
+      key: ValueKey('assignment-${widget.assignmentId}-$_reloadTick'),
       future: future,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -174,14 +171,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
           lang: lang,
           a: data.assignment!,
           classData: data.classData,
-          apiSubmission: data.apiResult != null
-              ? _ApiSubmission(
-                  hasSubmission: data.apiResult!.hasSubmission,
-                  submittedAt: data.apiResult!.submittedAt,
-                  submissionFileUrl: data.apiResult!.submissionFileUrl,
-                  submissionFileName: data.apiResult!.submissionFileName,
-                )
-              : null,
+          mySubmission: data.mySubmission,
         );
       },
     );
@@ -194,12 +184,20 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     required AssignmentsRepository assignmentsRepo,
     required ClassesRepository classesRepo,
   }) async {
-    final apiResult = await apiRepo.getAssignmentDetail(assignmentId);
+    // Load assignment detail + resubmit-aware "my submission" in parallel.
+    final results = await Future.wait<Object?>([
+      apiRepo.getAssignmentDetail(assignmentId),
+      apiRepo.getMySubmission(assignmentId),
+    ]);
+    final apiResult = results[0] as AssignmentDetailResult?;
+    final mySub = results[1] as MySubmissionStatus?;
+
     if (apiResult != null) {
       return _AssignmentScreenData(
         assignment: apiResult.assignment,
         classData: apiResult.classInfo,
         apiResult: apiResult,
+        mySubmission: mySub,
       );
     }
     if (passedAssignment != null) {
@@ -212,14 +210,15 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
         assignment: passedAssignment,
         classData: classData,
         apiResult: null,
+        mySubmission: mySub,
       );
     }
-    final results = await Future.wait([
+    final fallback = await Future.wait([
       assignmentsRepo.getAssignmentById(assignmentId),
       classesRepo.getClasses(),
     ]);
-    final a = results[0] as AssignmentEntity?;
-    final classes = results[1] as List<ClassEntity>;
+    final a = fallback[0] as AssignmentEntity?;
+    final classes = fallback[1] as List<ClassEntity>;
     ClassEntity? classData;
     if (a != null) {
       try {
@@ -230,6 +229,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
       assignment: a,
       classData: classData,
       apiResult: null,
+      mySubmission: mySub,
     );
   }
 
@@ -238,44 +238,189 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     required LanguageProvider lang,
     required AssignmentEntity a,
     ClassEntity? classData,
-    _ApiSubmission? apiSubmission,
+    MySubmissionStatus? mySubmission,
   }) {
     final daysUntilDue = _daysUntilDue(a.dueDate);
     final isOverdue = daysUntilDue < 0;
     final isUrgent = daysUntilDue <= 2 && daysUntilDue >= 0;
-    final isSubmitted = apiSubmission?.hasSubmission ?? _submitted;
-    final isGraded = a.status == AssignmentStatus.graded;
+
+    // Prefer authoritative backend flags from MySubmissionStatus; fall back
+    // to legacy assignment entity when the new endpoint isn't reachable.
+    final ms = mySubmission;
+    final hasSubmission = ms?.submission != null;
+    final isGraded = ms?.isGraded ?? (a.status == AssignmentStatus.graded);
+    final canResubmit = ms?.canResubmit ?? !hasSubmission;
+    final isClosed = ms?.isClosed ?? false;
+    final lateAllowed = ms?.lateAllowed ?? false;
+    final pastDue = ms?.isPastDue ?? isOverdue;
+
     final currentStatus = isGraded
         ? AssignmentStatus.graded
-        : (isSubmitted ? AssignmentStatus.submitted : a.status);
+        : (hasSubmission ? AssignmentStatus.submitted : a.status);
     final isPending = currentStatus == AssignmentStatus.pending;
 
+    // Submit button: no submission yet AND can submit.
+    final showSubmitButton = !hasSubmission && canResubmit && !isClosed;
+    // Resubmit button: prior submission exists, not graded yet, can still resubmit.
+    final showResubmitButton = hasSubmission &&
+        !isGraded &&
+        canResubmit &&
+        !isClosed;
+
     return SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 8),
-              if (isOverdue && isPending) _buildAlert(context, lang, isOverdue: true, assignment: a),
-              if (isUrgent && isPending) _buildDueSoonAlert(context, lang, daysUntilDue),
-              if (isSubmitted && a.status != AssignmentStatus.graded) _buildSubmittedAlert(context, lang),
-              const SizedBox(height: 12),
-              _buildDetailsCard(context, lang, a, classData, currentStatus, isOverdue),
-              if (a.status == AssignmentStatus.graded && a.grade != null) ...[
-                const SizedBox(height: 16),
-                _buildGradeCard(context, lang, a),
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+
+          // ---- Status banners (priority order) ----
+          if (isGraded)
+            _buildGradedBanner(lang, a, mySubmission)
+          else if (isClosed)
+            _buildClosedBanner(lang)
+          else if (pastDue && !lateAllowed && !hasSubmission)
+            _buildDeadlinePassedBanner(lang)
+          else if (pastDue && lateAllowed && !isGraded)
+            _buildLateAllowedBanner(lang)
+          else if (isOverdue && isPending)
+            _buildAlert(context, lang, isOverdue: true, assignment: a)
+          else if (isUrgent && isPending)
+            _buildDueSoonAlert(context, lang, daysUntilDue)
+          else if (hasSubmission && !isGraded)
+            _buildSubmittedAlert(context, lang),
+
+          const SizedBox(height: 12),
+          _buildDetailsCard(context, lang, a, classData, currentStatus, isOverdue),
+
+          if (isGraded && (a.grade != null || ms?.submission?.gradeScore != null)) ...[
+            const SizedBox(height: 16),
+            _buildGradeCard(context, lang, a, mySubmission),
+          ],
+
+          // Existing submission preview (when not graded yet)
+          if (hasSubmission && !isGraded) ...[
+            const SizedBox(height: 16),
+            _buildYourSubmissionCard(context, lang, mySubmission: mySubmission),
+          ],
+
+          // Submit / Resubmit card
+          if (showSubmitButton || showResubmitButton) ...[
+            const SizedBox(height: 16),
+            _buildSubmissionCard(
+              context,
+              lang,
+              isResubmit: showResubmitButton,
+            ),
+          ],
+
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  // ---------- Banners ----------
+
+  Widget _bannerBox({
+    required Color bg,
+    required Color border,
+    required Color iconColor,
+    required Color titleColor,
+    required Color bodyColor,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: iconColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: titleColor)),
+                if (subtitle != null && subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: TextStyle(fontSize: 11, color: bodyColor)),
+                ],
               ],
-              if (!isSubmitted && isPending) ...[
-                const SizedBox(height: 16),
-                _buildSubmissionCard(context, lang),
-              ],
-              if (isSubmitted && a.status != AssignmentStatus.graded) ...[
-                const SizedBox(height: 16),
-                _buildYourSubmissionCard(context, lang, apiSubmission: apiSubmission),
-              ],
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGradedBanner(LanguageProvider lang, AssignmentEntity a, MySubmissionStatus? ms) {
+    final score = ms?.submission?.gradeScore ?? a.grade ?? 0;
+    final feedback = ms?.submission?.gradeFeedback ?? a.feedback ?? '';
+    final body = lang
+        .t('assignments.submissionGradedBannerBody')
+        .replaceAll('{score}', score.toString())
+        .replaceAll('{points}', a.points.toString());
+    String subtitle = body;
+    if (feedback.trim().isNotEmpty) {
+      final fb = lang
+          .t('assignments.submissionGradedBannerFeedback')
+          .replaceAll('{feedback}', feedback.trim());
+      subtitle = '$body  ·  $fb';
+    }
+    return _bannerBox(
+      bg: Colors.green.shade50,
+      border: Colors.green.shade200,
+      iconColor: Colors.green.shade700,
+      titleColor: Colors.green.shade900,
+      bodyColor: Colors.green.shade800,
+      icon: Icons.verified_rounded,
+      title: lang.t('assignments.submissionGradedBannerTitle'),
+      subtitle: subtitle,
+    );
+  }
+
+  Widget _buildClosedBanner(LanguageProvider lang) {
+    return _bannerBox(
+      bg: Colors.grey.shade100,
+      border: Colors.grey.shade300,
+      iconColor: Colors.grey.shade700,
+      titleColor: Colors.grey.shade900,
+      bodyColor: Colors.grey.shade700,
+      icon: Icons.lock_outline_rounded,
+      title: lang.t('assignments.assignmentClosedBanner'),
+    );
+  }
+
+  Widget _buildDeadlinePassedBanner(LanguageProvider lang) {
+    return _bannerBox(
+      bg: Colors.red.shade50,
+      border: Colors.red.shade200,
+      iconColor: Colors.red.shade700,
+      titleColor: Colors.red.shade900,
+      bodyColor: Colors.red.shade800,
+      icon: Icons.event_busy_rounded,
+      title: lang.t('assignments.deadlinePassedBanner'),
+    );
+  }
+
+  Widget _buildLateAllowedBanner(LanguageProvider lang) {
+    return _bannerBox(
+      bg: Colors.orange.shade50,
+      border: Colors.orange.shade200,
+      iconColor: Colors.orange.shade800,
+      titleColor: Colors.orange.shade900,
+      bodyColor: Colors.orange.shade800,
+      icon: Icons.schedule_rounded,
+      title: lang.t('assignments.lateSubmissionAllowedBanner'),
     );
   }
 
@@ -300,7 +445,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                 Text(lang.t('assignments.overdue'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.red.shade800)),
                 const SizedBox(height: 2),
                 Text(
-                  '${lang.t('assignments.dueDate')} ${_formatDate(assignment.dueDate)}. ${lang.t('assignments.lateSubmissionsNote')}',
+                  '${lang.t('assignments.dueDate')} ${_formatDateTime(assignment.dueDate)}. ${lang.t('assignments.lateSubmissionsNote')}',
                   style: TextStyle(fontSize: 11, color: Colors.red.shade700),
                 ),
               ],
@@ -437,7 +582,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                       children: [
                         Text(lang.t('assignments.dueDate'), style: TextStyle(fontSize: 10, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
                         const SizedBox(height: 4),
-                        Text(_formatDate(a.dueDate), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        Text(_formatDateTime(a.dueDate), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -593,8 +738,9 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     );
   }
 
-  Widget _buildGradeCard(BuildContext context, LanguageProvider lang, AssignmentEntity a) {
-    final grade = a.grade ?? 0;
+  Widget _buildGradeCard(BuildContext context, LanguageProvider lang, AssignmentEntity a, [MySubmissionStatus? ms]) {
+    final grade = ms?.submission?.gradeScore ?? a.grade ?? 0;
+    final feedback = ms?.submission?.gradeFeedback ?? a.feedback;
     final pct = a.points > 0 ? (grade / a.points) * 100 : 0.0;
     final clampedPct = pct.clamp(0, 100).toDouble();
 
@@ -799,7 +945,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                 ),
               ],
             ),
-            if (a.feedback != null && a.feedback!.trim().isNotEmpty) ...[
+            if (feedback != null && feedback.trim().isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
@@ -829,7 +975,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      a.feedback!,
+                      feedback,
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey.shade800,
@@ -846,8 +992,15 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     );
   }
 
-  Widget _buildSubmissionCard(BuildContext context, LanguageProvider lang) {
+  Widget _buildSubmissionCard(
+    BuildContext context,
+    LanguageProvider lang, {
+    bool isResubmit = false,
+  }) {
     final canSubmit = _submissionText.trim().isNotEmpty || _selectedFileName != null;
+    final headerTitle = isResubmit
+        ? lang.t('assignments.resubmitAssignment')
+        : lang.t('assignments.submitAssignment');
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3), width: 2)),
@@ -866,9 +1019,9 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.upload, size: 20, color: Colors.white),
+                    Icon(isResubmit ? Icons.refresh_rounded : Icons.upload, size: 20, color: Colors.white),
                     const SizedBox(width: 8),
-                    Text(lang.t('assignments.submitAssignment'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text(headerTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -987,38 +1140,22 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton.icon(
-                    onPressed: canSubmit
-                        ? () async {
-                            final repo = context.read<StudentAssignmentDetailsRepository>();
-                            final result = await repo.submitAssignment(
-                              widget.assignmentId,
-                              textAnswer: _submissionText.trim().isEmpty ? null : _submissionText.trim(),
-                              filePath: _selectedFilePath,
-                            );
-                            if (!context.mounted) return;
-                            if (result.ok) {
-                              setState(() => _submitted = true);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(lang.t('assignments.submitted'))),
-                              );
-                            } else {
-                              final fail = lang.t('assignments.submitFailed');
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    result.message ??
-                                        (fail == 'assignments.submitFailed' || fail.isEmpty
-                                            ? 'Could not submit assignment.'
-                                            : fail),
-                                  ),
-                                  backgroundColor: Colors.red.shade700,
-                                ),
-                              );
-                            }
-                          }
+                    onPressed: (canSubmit && !_submitting)
+                        ? () => _handleSubmit(context, lang, isResubmit: isResubmit)
                         : null,
-                    icon: const Icon(Icons.upload, size: 18),
-                    label: Text(lang.t('assignments.submitAssignment')),
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Icon(isResubmit ? Icons.refresh_rounded : Icons.upload, size: 18),
+                    label: Text(isResubmit
+                        ? lang.t('assignments.resubmit')
+                        : lang.t('assignments.submitAssignment')),
                     style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.white),
                   ),
                 ),
@@ -1034,33 +1171,35 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     );
   }
 
-  Widget _buildYourSubmissionCard(BuildContext context, LanguageProvider lang, {_ApiSubmission? apiSubmission}) {
-    String dateStr;
-    String timeStr;
+  Widget _buildYourSubmissionCard(BuildContext context, LanguageProvider lang, {MySubmissionStatus? mySubmission}) {
+    final sub = mySubmission?.submission;
+    String dateStr = '';
+    String timeStr = '';
     String responseDisplay;
-    if (apiSubmission != null && apiSubmission.submittedAt != null) {
-      try {
-        final dt = DateTime.parse(apiSubmission.submittedAt!);
-        dateStr = '${dt.month}/${dt.day}/${dt.year}';
-        timeStr = '${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-      } catch (_) {
-        dateStr = apiSubmission.submittedAt!;
-        timeStr = '';
+    bool isFile = false;
+
+    if (sub != null) {
+      final dt = sub.submittedAt;
+      if (dt != null) {
+        dateStr = AppDateFormat.date(dt);
+        timeStr = AppDateFormat.time(dt);
       }
-      if (apiSubmission.submissionFileName != null && apiSubmission.submissionFileName!.isNotEmpty) {
-        responseDisplay = apiSubmission.submissionFileName!;
-        if (apiSubmission.submissionFileUrl != null && apiSubmission.submissionFileUrl!.isNotEmpty) {
-          responseDisplay += ' (${lang.t('assignments.uploadFile')})';
-        }
+      if (sub.fileOriginalName != null && sub.fileOriginalName!.isNotEmpty) {
+        responseDisplay = sub.fileOriginalName!;
+        isFile = true;
+      } else if (sub.textAnswer != null && sub.textAnswer!.trim().isNotEmpty) {
+        responseDisplay = sub.textAnswer!;
       } else {
-        responseDisplay = 'File submission';
+        responseDisplay = sub.submissionType == 'file' ? 'File submission' : '—';
+        isFile = sub.submissionType == 'file';
       }
     } else {
       final now = DateTime.now();
-      dateStr = '${now.month}/${now.day}/${now.year}';
-      timeStr = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
+      dateStr = AppDateFormat.date(now);
+      timeStr = AppDateFormat.time(now);
       responseDisplay = _submissionText.isEmpty ? 'File submission only' : _submissionText;
     }
+
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.2))),
@@ -1069,29 +1208,144 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(lang.t('assignments.mySubmission'), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-              child: Text(
-                timeStr.isEmpty ? '${lang.t('assignments.submittedOn')} $dateStr' : '${lang.t('assignments.submittedOn')} $dateStr at $timeStr',
-                style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
-              ),
+            Row(
+              children: [
+                Icon(Icons.assignment_turned_in_outlined, size: 18, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  lang.t('assignments.previousSubmission'),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
-            Text('Your Response:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
-            const SizedBox(height: 6),
+            if (dateStr.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+                child: Text(
+                  timeStr.isEmpty
+                      ? '${lang.t('assignments.submittedOn')} $dateStr'
+                      : '${lang.t('assignments.submittedOn')} $dateStr at $timeStr',
+                  style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
+                ),
+              ),
+            const SizedBox(height: 12),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8)),
-              child: Text(responseDisplay, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+              child: Row(
+                children: [
+                  Icon(
+                    isFile ? Icons.picture_as_pdf_rounded : Icons.short_text_rounded,
+                    size: 18,
+                    color: isFile ? Colors.red.shade700 : Colors.grey.shade700,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      responseDisplay,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  // ---------- Submit / Resubmit handling ----------
+
+  Future<void> _handleSubmit(
+    BuildContext context,
+    LanguageProvider lang, {
+    required bool isResubmit,
+  }) async {
+    if (isResubmit) {
+      final confirmed = await _confirmResubmit(context, lang);
+      if (!confirmed) return;
+    }
+    if (!context.mounted) return;
+    setState(() => _submitting = true);
+
+    final repo = context.read<StudentAssignmentDetailsRepository>();
+    final result = await repo.submitAssignment(
+      widget.assignmentId,
+      textAnswer: _submissionText.trim().isEmpty ? null : _submissionText.trim(),
+      filePath: _selectedFilePath,
+    );
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    if (!context.mounted) return;
+
+    if (result.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(lang.t('assignments.submitted'))),
+      );
+      _reload();
+      return;
+    }
+
+    // Failure — pick a friendly message based on the categorised error.
+    String snack;
+    switch (result.errorKind) {
+      case SubmitErrorKind.alreadyGraded:
+        snack = lang.t('assignments.alreadyGradedToast');
+        break;
+      case SubmitErrorKind.assignmentClosed:
+        snack = lang.t('assignments.assignmentClosedBanner');
+        break;
+      case SubmitErrorKind.lateNotAllowed:
+        snack = lang.t('assignments.deadlinePassedBanner');
+        break;
+      default:
+        final fail = lang.t('assignments.submitFailed');
+        snack = result.message ??
+            (fail == 'assignments.submitFailed' || fail.isEmpty
+                ? 'Could not submit assignment.'
+                : fail);
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(snack), backgroundColor: Colors.red.shade700),
+    );
+
+    // For non-recoverable backend states, refresh so the UI reflects new flags.
+    if (result.errorKind == SubmitErrorKind.alreadyGraded ||
+        result.errorKind == SubmitErrorKind.assignmentClosed ||
+        result.errorKind == SubmitErrorKind.lateNotAllowed) {
+      _reload();
+    }
+  }
+
+  Future<bool> _confirmResubmit(BuildContext context, LanguageProvider lang) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(lang.t('assignments.resubmitConfirmTitle')),
+        content: Text(lang.t('assignments.resubmitConfirmBody')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(lang.t('assignments.cancel')),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(lang.t('assignments.replace')),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 }
 

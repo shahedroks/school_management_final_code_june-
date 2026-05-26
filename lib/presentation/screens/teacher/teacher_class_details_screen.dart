@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/data/datasources/assignments_remote_datasource.dart';
 import 'package:high_school/data/datasources/lessons_remote_datasource.dart';
 import 'package:high_school/domain/entities/assignment_entity.dart';
@@ -80,14 +81,8 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
   }
 
   static String _formatDate(String dateStr) {
-    try {
-      final d = DateTime.tryParse(dateStr);
-      if (d != null) {
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return '${months[d.month - 1]} ${d.day}';
-      }
-    } catch (_) {}
-    return dateStr;
+    final f = AppDateFormat.shortDate(dateStr);
+    return f.isEmpty ? dateStr : f;
   }
 
   @override

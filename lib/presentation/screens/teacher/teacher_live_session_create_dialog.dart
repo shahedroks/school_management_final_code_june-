@@ -177,6 +177,7 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
       initialDate: teacherParseYmd(_dateCtrl.text),
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
+      locale: const Locale('fr', 'FR'),
     );
     if (picked != null && mounted) {
       setState(() => _dateCtrl.text = teacherFormatYmd(picked));
@@ -190,6 +191,11 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
       initialTime: teacherParseHmOr(
         const TimeOfDay(hour: 10, minute: 0),
         _timeCtrl.text,
+      ),
+      builder: (ctx, child) => Localizations.override(
+        context: ctx,
+        locale: const Locale('fr', 'FR'),
+        child: child,
       ),
     );
     if (picked != null && mounted) {

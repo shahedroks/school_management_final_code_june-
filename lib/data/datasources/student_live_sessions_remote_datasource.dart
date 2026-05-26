@@ -70,12 +70,7 @@ class StudentLiveSessionsRemoteDatasource {
     final dateRaw = m['date']?.toString();
     String dateStr = '';
     if (dateRaw != null && dateRaw.isNotEmpty) {
-      try {
-        final d = DateTime.parse(dateRaw);
-        dateStr = '${d.month}/${d.day}/${d.year}';
-      } catch (_) {
-        dateStr = dateRaw;
-      }
+      dateStr = dateRaw;
     }
     final time = m['time']?.toString() ?? '';
     final zoomLink = m['zoomLink']?.toString() ?? m['meetingLink']?.toString() ?? '';

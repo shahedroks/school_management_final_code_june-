@@ -6,6 +6,7 @@ import 'package:high_school/core/network/api_response_helper.dart';
 import 'package:high_school/domain/entities/assignment_detail_result.dart';
 import 'package:high_school/domain/entities/assignment_entity.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
+import 'package:high_school/domain/entities/my_submission_status.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,18 +23,25 @@ class StudentAssignmentDetailsRemoteDatasource {
 
   bool get isConfigured => _baseUrl.isNotEmpty;
 
-  /// POST /submission/:assignmentId/submit (Student, multipart/form-data).
+  /// POST /submissions/:assignmentId/submit (Student, multipart/form-data).
   /// Sends the student's submission (optional text answer and optional file).
-  Future<({bool ok, String? message})> submitAssignment({
+  ///
+  /// Backend returns 400 with specific messages when the submission is no
+  /// longer accepted (graded, closed, late not allowed). Those are surfaced
+  /// via [SubmitResult.errorKind] so the UI can refresh + show a friendly
+  /// message.
+  Future<SubmitResult> submitAssignment({
     required String assignmentId,
     String? textAnswer,
     String? filePath,
   }) async {
-    if (!isConfigured) return (ok: false, message: 'API not configured');
+    if (!isConfigured) return SubmitResult.failure('API not configured');
     final token = _prefs.getString(AppConstants.sessionTokenKey);
-    if (token == null || token.isEmpty) return (ok: false, message: 'Not signed in');
+    if (token == null || token.isEmpty) {
+      return SubmitResult.failure('Not signed in', SubmitErrorKind.unauthorized);
+    }
 
-    final uri = Uri.parse('$_apiBase/submission/$assignmentId/submit');
+    final uri = Uri.parse('$_apiBase/submissions/$assignmentId/submit');
     final request = http.MultipartRequest('POST', uri);
     request.headers['Authorization'] = 'Bearer $token';
     if (textAnswer != null && textAnswer.trim().isNotEmpty) {
@@ -80,17 +88,148 @@ class StudentAssignmentDetailsRemoteDatasource {
         final success = decoded?['success'] == true ||
             decoded?['success'] == 1 ||
             (decoded?['status']?.toString().toLowerCase() == 'success');
-        if (success) return (ok: true, message: null);
+        if (success) return SubmitResult.success();
       }
 
       final msg = decoded?['message']?.toString() ??
           (raw.isNotEmpty ? raw : 'Request failed ($code)');
-      return (ok: false, message: msg);
+      return SubmitResult.failure(msg, _classifySubmitError(msg));
     } on UnauthorizedApiException {
-      return (ok: false, message: 'Unauthorized');
+      return SubmitResult.failure('Unauthorized', SubmitErrorKind.unauthorized);
     } catch (e) {
-      return (ok: false, message: e.toString());
+      return SubmitResult.failure(e.toString());
     }
+  }
+
+  static SubmitErrorKind _classifySubmitError(String message) {
+    final m = message.toLowerCase();
+    if (m.contains('already been graded') || m.contains('already graded')) {
+      return SubmitErrorKind.alreadyGraded;
+    }
+    if (m.contains('assignment is closed') || m.contains('closed')) {
+      return SubmitErrorKind.assignmentClosed;
+    }
+    if (m.contains('late submission is not allowed') ||
+        m.contains('late not allowed') ||
+        m.contains('deadline has passed')) {
+      return SubmitErrorKind.lateNotAllowed;
+    }
+    return SubmitErrorKind.other;
+  }
+
+  /// GET /submissions/assignments/:assignmentId/submission/me — returns
+  /// `{ submission, isGraded, canResubmit, assignmentStatus, dueAt, lateAllowed }`.
+  ///
+  /// Returns null when not configured / unauthorized / parse fails.
+  Future<MySubmissionStatus?> getMySubmission(String assignmentId) async {
+    if (!isConfigured) return null;
+    final token = _prefs.getString(AppConstants.sessionTokenKey);
+    if (token == null || token.isEmpty) return null;
+    final uri = Uri.parse(
+      '$_apiBase/submissions/assignments/$assignmentId/submission/me',
+    );
+    try {
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>?;
+      ensureAuthorized(decoded);
+      return _parseMySubmission(decoded);
+    } on UnauthorizedApiException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static MySubmissionStatus? _parseMySubmission(Map<String, dynamic>? decoded) {
+    if (decoded == null) return null;
+    final success = decoded['success'];
+    if (success == false) return null;
+    final data = decoded['data'];
+    if (data is! Map) return null;
+    final dm = Map<String, dynamic>.from(data);
+
+    StudentSubmission? sub;
+    final subRaw = dm['submission'];
+    if (subRaw is Map) {
+      sub = _studentSubmissionFromJson(Map<String, dynamic>.from(subRaw));
+    }
+
+    return MySubmissionStatus(
+      submission: sub,
+      isGraded: dm['isGraded'] == true,
+      canResubmit: dm['canResubmit'] == true,
+      assignmentStatus: dm['assignmentStatus']?.toString() ?? 'open',
+      dueAt: _parseDate(dm['dueAt']),
+      lateAllowed: dm['lateAllowed'] == true,
+    );
+  }
+
+  static StudentSubmission? _studentSubmissionFromJson(Map<String, dynamic> m) {
+    final id = m['_id']?.toString() ?? m['id']?.toString() ?? '';
+    if (id.isEmpty) return null;
+
+    String? fileName;
+    String? fileMime;
+    int? fileSize;
+    String? fileStorageKey;
+    String? fileUrl;
+    final file = m['file'];
+    if (file is Map) {
+      final fm = Map<String, dynamic>.from(file);
+      fileName = fm['originalName']?.toString();
+      fileMime = fm['mimeType']?.toString();
+      final sz = fm['size'];
+      fileSize = sz is int ? sz : int.tryParse(sz?.toString() ?? '');
+      fileStorageKey = fm['storageKey']?.toString();
+      fileUrl = fm['url']?.toString();
+    }
+
+    int? gradeScore;
+    String? gradeFeedback;
+    String? gradedBy;
+    DateTime? gradedAt;
+    final grade = m['grade'];
+    if (grade is Map) {
+      final gm = Map<String, dynamic>.from(grade);
+      gradeScore = _parseScore(gm['score']);
+      final fb = gm['feedback']?.toString();
+      if (fb != null && fb.isNotEmpty) gradeFeedback = fb;
+      gradedBy = gm['gradedBy']?.toString();
+      gradedAt = _parseDate(gm['gradedAt']);
+    }
+
+    return StudentSubmission(
+      id: id,
+      assignmentId: m['assignmentId']?.toString() ?? '',
+      studentId: m['studentId']?.toString() ?? '',
+      submissionType: m['submissionType']?.toString() ?? 'file',
+      fileOriginalName: fileName,
+      fileMimeType: fileMime,
+      fileSize: fileSize,
+      fileStorageKey: fileStorageKey,
+      fileUrl: fileUrl,
+      textAnswer: m['textAnswer']?.toString(),
+      submittedAt: _parseDate(m['submittedAt']),
+      status: m['status']?.toString() ?? 'pending',
+      gradeScore: gradeScore,
+      gradeFeedback: gradeFeedback,
+      gradedBy: gradedBy,
+      gradedAt: gradedAt,
+    );
+  }
+
+  static DateTime? _parseDate(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString();
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s);
   }
 
   /// GET /assignments/:assignmentId (Student). Returns null if not configured, unauthorized, or error.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/entities/teacher_live_sessions_overview.dart';
@@ -55,14 +56,8 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
   }
 
   static String _formatDate(String dateStr) {
-    try {
-      final d = DateTime.tryParse(dateStr);
-      if (d != null) {
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return '${months[d.month - 1]} ${d.day}, ${d.year}';
-      }
-    } catch (_) {}
-    return dateStr;
+    final f = AppDateFormat.date(dateStr);
+    return f.isEmpty ? dateStr : f;
   }
 
   @override

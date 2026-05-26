@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:high_school/core/constants/app_constants.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/core/network/unauthorized_handler.dart';
 import 'package:high_school/core/theme/app_theme.dart';
 import 'package:high_school/core/router/app_router.dart';
@@ -52,6 +54,7 @@ import 'package:high_school/core/l10n/app_translations.dart' as app_lang;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting(AppDateFormat.locale);
   final prefs = await SharedPreferences.getInstance();
 
   // Repositories

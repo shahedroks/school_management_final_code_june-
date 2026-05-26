@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/repositories/classes_repository.dart';
@@ -265,7 +266,7 @@ class _UpcomingSessionCard extends StatelessWidget {
                   children: [
                     Icon(Icons.calendar_today, size: 14, color: AppTheme.primary),
                     const SizedBox(width: 6),
-                    Text(session.date, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                    Text(AppDateFormat.date(session.date), style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                     const SizedBox(width: 16),
                     Icon(Icons.schedule, size: 14, color: AppTheme.primary),
                     const SizedBox(width: 6),

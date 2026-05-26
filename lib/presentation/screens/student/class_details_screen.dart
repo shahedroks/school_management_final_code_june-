@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
+import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/assignment_entity.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/lesson_entity.dart';
@@ -395,29 +396,8 @@ class _LessonsTab extends StatelessWidget {
   }
 
   String _formatDate(String dateStr) {
-    try {
-      final parts = dateStr.split('-');
-      if (parts.length >= 3) {
-        const months = [
-          'Jan',
-          'Feb',
-          'Mar',
-          'Apr',
-          'May',
-          'Jun',
-          'Jul',
-          'Aug',
-          'Sep',
-          'Oct',
-          'Nov',
-          'Dec'
-        ];
-        final m = int.tryParse(parts[1]);
-        final d = parts[2].length > 2 ? parts[2].substring(0, 2) : parts[2];
-        if (m != null && m >= 1 && m <= 12) return '${months[m - 1]} $d';
-      }
-    } catch (_) {}
-    return dateStr;
+    final f = AppDateFormat.date(dateStr);
+    return f.isEmpty ? dateStr : f;
   }
 }
 
@@ -568,28 +548,7 @@ class _AssignmentsTab extends StatelessWidget {
   }
 
   String _formatDate(String dateStr) {
-    try {
-      final parts = dateStr.split('-');
-      if (parts.length >= 3) {
-        const months = [
-          'Jan',
-          'Feb',
-          'Mar',
-          'Apr',
-          'May',
-          'Jun',
-          'Jul',
-          'Aug',
-          'Sep',
-          'Oct',
-          'Nov',
-          'Dec'
-        ];
-        final m = int.tryParse(parts[1]);
-        final d = parts[2].length > 2 ? parts[2].substring(0, 2) : parts[2];
-        if (m != null && m >= 1 && m <= 12) return '${months[m - 1]} $d';
-      }
-    } catch (_) {}
-    return dateStr;
+    final f = AppDateFormat.date(dateStr);
+    return f.isEmpty ? dateStr : f;
   }
 }
