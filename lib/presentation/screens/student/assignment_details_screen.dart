@@ -244,7 +244,10 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
     final isOverdue = daysUntilDue < 0;
     final isUrgent = daysUntilDue <= 2 && daysUntilDue >= 0;
     final isSubmitted = apiSubmission?.hasSubmission ?? _submitted;
-    final currentStatus = isSubmitted ? AssignmentStatus.submitted : a.status;
+    final isGraded = a.status == AssignmentStatus.graded;
+    final currentStatus = isGraded
+        ? AssignmentStatus.graded
+        : (isSubmitted ? AssignmentStatus.submitted : a.status);
     final isPending = currentStatus == AssignmentStatus.pending;
 
     return SingleChildScrollView(
@@ -593,62 +596,246 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
   Widget _buildGradeCard(BuildContext context, LanguageProvider lang, AssignmentEntity a) {
     final grade = a.grade ?? 0;
     final pct = a.points > 0 ? (grade / a.points) * 100 : 0.0;
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.green.shade200)),
+    final clampedPct = pct.clamp(0, 100).toDouble();
+
+    Color accent;
+    Color accentDark;
+    String tierLabel;
+    IconData tierIcon;
+    if (clampedPct >= 85) {
+      accent = const Color(0xFF16A34A);
+      accentDark = const Color(0xFF166534);
+      tierLabel = 'Excellent';
+      tierIcon = Icons.emoji_events_rounded;
+    } else if (clampedPct >= 70) {
+      accent = const Color(0xFF22A06B);
+      accentDark = const Color(0xFF15803D);
+      tierLabel = 'Great';
+      tierIcon = Icons.star_rounded;
+    } else if (clampedPct >= 50) {
+      accent = const Color(0xFFF59E0B);
+      accentDark = const Color(0xFFB45309);
+      tierLabel = 'Good';
+      tierIcon = Icons.thumb_up_alt_rounded;
+    } else {
+      accent = const Color(0xFFEF4444);
+      accentDark = const Color(0xFFB91C1C);
+      tierLabel = 'Keep going';
+      tierIcon = Icons.trending_up_rounded;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            accent.withValues(alpha: 0.04),
+          ],
+        ),
+        border: Border.all(color: accent.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.star, size: 20, color: Colors.green.shade700),
-                const SizedBox(width: 8),
-                Text(lang.t('assignments.gradeAndFeedback'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green.shade900)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Column(
-                  children: [
-                    Text('$grade', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green.shade700)),
-                    Text('of ${a.points}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                  ],
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.workspace_premium_rounded, size: 20, color: accentDark),
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Text(
+                    lang.t('assignments.gradeAndFeedback'),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: accentDark,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: pct / 100,
-                          backgroundColor: Colors.grey.shade200,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.green.shade600),
-                          minHeight: 6,
+                      Icon(tierIcon, size: 12, color: accentDark),
+                      const SizedBox(width: 4),
+                      Text(
+                        tierLabel,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: accentDark,
+                          letterSpacing: 0.3,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text('${pct.toStringAsFixed(1)}% ${lang.t('assignments.score')}', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                     ],
                   ),
                 ),
               ],
             ),
-            if (a.feedback != null && a.feedback!.isNotEmpty) ...[
-              const SizedBox(height: 12),
+            const SizedBox(height: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _GradeCircle(
+                  pct: clampedPct,
+                  color: accent,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '$grade',
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: accentDark,
+                          height: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '/${a.points}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${clampedPct.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: accentDark,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 3),
+                            child: Text(
+                              lang.t('assignments.score'),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Stack(
+                        children: [
+                          Container(
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                          FractionallySizedBox(
+                            widthFactor: clampedPct / 100,
+                            child: Container(
+                              height: 10,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [accent.withValues(alpha: 0.85), accentDark],
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: accent.withValues(alpha: 0.35),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${a.points - grade} ${lang.t('assignments.points').toLowerCase()} ${pct >= 100 ? '' : 'to go'}'.trim(),
+                        style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (a.feedback != null && a.feedback!.trim().isNotEmpty) ...[
+              const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8)),
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: accent.withValues(alpha: 0.18)),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(lang.t('assignments.teachersFeedback'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
-                    const SizedBox(height: 6),
-                    Text(a.feedback!, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                    Row(
+                      children: [
+                        Icon(Icons.format_quote_rounded, size: 16, color: accentDark),
+                        const SizedBox(width: 6),
+                        Text(
+                          lang.t('assignments.teachersFeedback'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: accentDark,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      a.feedback!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade800,
+                        height: 1.4,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -903,6 +1090,67 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Circular score badge with a thin progress ring used in the grade card.
+class _GradeCircle extends StatelessWidget {
+  const _GradeCircle({
+    required this.pct,
+    required this.color,
+    required this.child,
+  });
+
+  final double pct;
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 88,
+      height: 88,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(
+            width: 88,
+            height: 88,
+            child: CircularProgressIndicator(
+              value: 1,
+              strokeWidth: 7,
+              valueColor: AlwaysStoppedAnimation<Color>(color.withValues(alpha: 0.12)),
+            ),
+          ),
+          SizedBox(
+            width: 88,
+            height: 88,
+            child: CircularProgressIndicator(
+              value: pct / 100,
+              strokeWidth: 7,
+              strokeCap: StrokeCap.round,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          Container(
+            width: 66,
+            height: 66,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.18),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Center(child: child),
+          ),
+        ],
       ),
     );
   }

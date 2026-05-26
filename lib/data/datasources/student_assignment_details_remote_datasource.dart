@@ -139,6 +139,8 @@ class StudentAssignmentDetailsRemoteDatasource {
     String? submissionFileName;
     String? submissionType;
     String submissionStatus = '';
+    int? submissionScore;
+    String? submissionFeedback;
     if (submissionJson != null && submissionJson is Map<String, dynamic>) {
       hasSubmission = true;
       submittedAt = submissionJson['submittedAt']?.toString();
@@ -149,6 +151,17 @@ class StudentAssignmentDetailsRemoteDatasource {
         submissionFileUrl = file['url']?.toString();
         submissionFileName = file['originalName']?.toString();
       }
+      final gradeRaw = submissionJson['grade'];
+      if (gradeRaw is Map) {
+        final gm = Map<String, dynamic>.from(gradeRaw);
+        submissionScore = _parseScore(gm['score']);
+        final fb = gm['feedback']?.toString();
+        if (fb != null && fb.isNotEmpty) submissionFeedback = fb;
+      } else if (gradeRaw != null) {
+        submissionScore = _parseScore(gradeRaw);
+      }
+      submissionScore ??= _parseScore(submissionJson['score']);
+      submissionFeedback ??= submissionJson['feedback']?.toString();
     }
     if (hasSubmission && submissionStatus == 'graded') {
       assignment = AssignmentEntity(
@@ -159,8 +172,8 @@ class StudentAssignmentDetailsRemoteDatasource {
         dueDate: assignment.dueDate,
         points: assignment.points,
         status: AssignmentStatus.graded,
-        grade: assignment.grade,
-        feedback: assignment.feedback,
+        grade: submissionScore ?? assignment.grade,
+        feedback: submissionFeedback ?? assignment.feedback,
         submissions: assignment.submissions,
         attachments: assignment.attachments,
       );
@@ -270,6 +283,13 @@ class StudentAssignmentDetailsRemoteDatasource {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static int? _parseScore(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.round();
+    return int.tryParse(v.toString());
   }
 
   static String _basename(String path) {
