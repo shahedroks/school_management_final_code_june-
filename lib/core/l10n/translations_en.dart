@@ -323,6 +323,18 @@ const Map<String, dynamic> translationsEn = {
     'alreadyGradedToast':
         'Your teacher has already graded your submission — you can no longer resubmit.',
     'submissionStatus': 'Submission Status',
+    'tierExcellent': 'Excellent',
+    'tierGreat': 'Great',
+    'tierGood': 'Good',
+    'tierKeepGoing': 'Keep going',
+    'pointsToGo': '{count} points to go',
+    'day': 'day',
+    'days': 'days',
+    'or': 'OR',
+    'submissionResponseHint': 'Type your assignment response here...',
+    'fileSubmission': 'File submission',
+    'fileSubmissionOnly': 'File submission only',
+    'characterCount': '{count} characters',
   },
   'live': {
     'liveSessions': 'Live Sessions',

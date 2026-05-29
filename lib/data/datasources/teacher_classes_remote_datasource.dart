@@ -325,12 +325,7 @@ class TeacherClassesRemoteDatasource {
     final description = m['description']?.toString() ?? '';
     var due = m['dueDate']?.toString() ?? '';
     if (due.isEmpty) {
-      final dueAt = m['dueAt']?.toString();
-      if (dueAt != null && dueAt.length >= 10) {
-        due = dueAt.substring(0, 10);
-      } else if (dueAt != null) {
-        due = dueAt;
-      }
+      due = m['dueAt']?.toString() ?? '';
     }
     final p = m['points'];
     final points = p is int ? p : int.tryParse(p?.toString() ?? '') ?? 0;

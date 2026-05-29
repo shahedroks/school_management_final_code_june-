@@ -477,7 +477,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                 Text(lang.t('assignments.dueSoon'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.amber.shade900)),
                 const SizedBox(height: 2),
                 Text(
-                  '${lang.t('assignments.dueDate')} $daysUntilDue ${daysUntilDue == 1 ? 'day' : 'days'}.',
+                  '${lang.t('assignments.dueDate')} $daysUntilDue ${daysUntilDue == 1 ? lang.t('assignments.day') : lang.t('assignments.days')}.',
                   style: TextStyle(fontSize: 11, color: Colors.amber.shade800),
                 ),
               ],
@@ -746,29 +746,30 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
 
     Color accent;
     Color accentDark;
-    String tierLabel;
+    String tierKey;
     IconData tierIcon;
     if (clampedPct >= 85) {
       accent = const Color(0xFF16A34A);
       accentDark = const Color(0xFF166534);
-      tierLabel = 'Excellent';
+      tierKey = 'assignments.tierExcellent';
       tierIcon = Icons.emoji_events_rounded;
     } else if (clampedPct >= 70) {
       accent = const Color(0xFF22A06B);
       accentDark = const Color(0xFF15803D);
-      tierLabel = 'Great';
+      tierKey = 'assignments.tierGreat';
       tierIcon = Icons.star_rounded;
     } else if (clampedPct >= 50) {
       accent = const Color(0xFFF59E0B);
       accentDark = const Color(0xFFB45309);
-      tierLabel = 'Good';
+      tierKey = 'assignments.tierGood';
       tierIcon = Icons.thumb_up_alt_rounded;
     } else {
       accent = const Color(0xFFEF4444);
       accentDark = const Color(0xFFB91C1C);
-      tierLabel = 'Keep going';
+      tierKey = 'assignments.tierKeepGoing';
       tierIcon = Icons.trending_up_rounded;
     }
+    final tierLabel = lang.t(tierKey);
 
     return Container(
       decoration: BoxDecoration(
@@ -936,10 +937,16 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                         ],
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        '${a.points - grade} ${lang.t('assignments.points').toLowerCase()} ${pct >= 100 ? '' : 'to go'}'.trim(),
-                        style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500),
-                      ),
+                      if (pct < 100)
+                        Text(
+                          lang
+                              .t('assignments.pointsToGo')
+                              .replaceAll('{count}', '${a.points - grade}'),
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade500,
+                              fontWeight: FontWeight.w500),
+                        ),
                     ],
                   ),
                 ),
@@ -1118,7 +1125,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                 const SizedBox(height: 16),
                 const Divider(height: 1),
                 const SizedBox(height: 8),
-                Center(child: Text('OR', style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500))),
+                Center(child: Text(lang.t('assignments.or'), style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500))),
                 const SizedBox(height: 16),
                 Text(lang.t('assignments.writtenSubmission'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
                 const SizedBox(height: 8),
@@ -1126,7 +1133,7 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                   maxLines: 6,
                   onChanged: (v) => setState(() => _submissionText = v),
                   decoration: InputDecoration(
-                    hintText: 'Type your assignment response here...',
+                    hintText: lang.t('assignments.submissionResponseHint'),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     filled: true,
                     fillColor: Colors.grey.shade50,
@@ -1134,7 +1141,13 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
                   style: const TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 8),
-                Align(alignment: Alignment.centerRight, child: Text('${_submissionText.length} characters', style: TextStyle(fontSize: 10, color: Colors.grey.shade400))),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    lang.t('assignments.characterCount').replaceAll('{count}', '${_submissionText.length}'),
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
@@ -1190,14 +1203,14 @@ class _AssignmentDetailsScreenState extends State<AssignmentDetailsScreen> {
       } else if (sub.textAnswer != null && sub.textAnswer!.trim().isNotEmpty) {
         responseDisplay = sub.textAnswer!;
       } else {
-        responseDisplay = sub.submissionType == 'file' ? 'File submission' : '—';
+        responseDisplay = sub.submissionType == 'file' ? lang.t('assignments.fileSubmission') : '—';
         isFile = sub.submissionType == 'file';
       }
     } else {
       final now = DateTime.now();
       dateStr = AppDateFormat.date(now);
       timeStr = AppDateFormat.time(now);
-      responseDisplay = _submissionText.isEmpty ? 'File submission only' : _submissionText;
+      responseDisplay = _submissionText.isEmpty ? lang.t('assignments.fileSubmissionOnly') : _submissionText;
     }
 
     return Card(

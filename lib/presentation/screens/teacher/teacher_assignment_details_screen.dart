@@ -124,7 +124,7 @@ class _TeacherAssignmentDetailsScreenState extends State<TeacherAssignmentDetail
 
   String _formatSubmitted(String iso) {
     if (iso.isEmpty || iso == '—') return iso;
-    final f = AppDateFormat.date(iso);
+    final f = AppDateFormat.dateTime(iso);
     return f.isEmpty ? iso : f;
   }
 
