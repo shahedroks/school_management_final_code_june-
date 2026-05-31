@@ -120,7 +120,7 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                         classFor(s),
                         isLive: true,
                         isCompleted: false,
-                        showDelete: !overview.fromRemote,
+                        showManageActions: false,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -138,7 +138,7 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                         classFor(s),
                         isLive: false,
                         isCompleted: false,
-                        showDelete: !overview.fromRemote,
+                        showManageActions: s.canManage,
                       ),
                     ),
                   if (completedSessions.isNotEmpty) ...[
@@ -153,7 +153,7 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                         classFor(s),
                         isLive: false,
                         isCompleted: true,
-                        showDelete: false,
+                        showManageActions: false,
                       ),
                     ),
                   ],
@@ -245,7 +245,7 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
     ClassEntity? cls, {
     required bool isLive,
     required bool isCompleted,
-    required bool showDelete,
+    required bool showManageActions,
   }) {
     final headerColor = isLive
         ? _liveGreen
@@ -386,7 +386,7 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                 ),
                 if ((isLive && session.link.isNotEmpty) ||
                     (!isLive && !isCompleted && session.link.isNotEmpty) ||
-                    showDelete) ...[
+                    showManageActions) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -399,7 +399,7 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                             style: ElevatedButton.styleFrom(backgroundColor: _liveGreen, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 10)),
                           ),
                         ),
-                        if (showDelete) const SizedBox(width: 8),
+                        if (showManageActions) const SizedBox(width: 8),
                       ] else if (!isLive && !isCompleted && session.link.isNotEmpty) ...[
                         Expanded(
                           child: OutlinedButton.icon(
@@ -413,14 +413,29 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                             ),
                           ),
                         ),
-                        if (showDelete) const SizedBox(width: 8),
+                        if (showManageActions) const SizedBox(width: 8),
                       ],
-                      if (showDelete)
+                      if (showManageActions) ...[
                         IconButton(
-                          onPressed: () => _confirmDelete(context, lang, session.title),
+                          onPressed: cls == null
+                              ? null
+                              : () => showTeacherCreateLiveSessionDialog(
+                                    context,
+                                    lang,
+                                    cls,
+                                    editing: session,
+                                    onSuccess: _reload,
+                                  ),
+                          icon: const Icon(Icons.edit_outlined, size: 22, color: AppTheme.primary),
+                          style: IconButton.styleFrom(backgroundColor: AppTheme.primary.withValues(alpha: 0.08)),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          onPressed: () => _confirmDelete(context, lang, session),
                           icon: const Icon(Icons.delete_outline, size: 22, color: _liveRed),
                           style: IconButton.styleFrom(backgroundColor: _liveRedLight),
                         ),
+                      ],
                     ],
                   ),
                 ],
@@ -550,21 +565,34 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
     );
   }
 
-  void _confirmDelete(BuildContext context, LanguageProvider lang, String title) {
-    showDialog(
+  void _confirmDelete(BuildContext context, LanguageProvider lang, LiveSessionEntity session) {
+    final title = session.title;
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Session'),
-        content: Text('Are you sure you want to delete "$title"?'),
+        title: Text(lang.t('live.deleteSession')),
+        content: Text('${lang.t('common.confirm')} "$title"?'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(lang.t('common.cancel'))),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Session "$title" has been deleted.')));
+              final repo = context.read<LiveSessionsRepository>();
+              final ok = await repo.deleteTeacherLiveSession(session.id);
+              if (!context.mounted) return;
+              if (ok) {
+                _reload();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(lang.t('live.sessionDeleted'))),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(lang.t('live.deleteSessionFailed'))),
+                );
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(lang.t('common.delete')),
           ),
         ],
       ),

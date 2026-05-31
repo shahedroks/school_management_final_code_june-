@@ -150,6 +150,8 @@ class TeacherClassesRemoteDatasource {
       var cid = m['classId']?.toString() ?? '';
       if (cid.isEmpty) cid = classId;
       final cn = m['className']?.toString();
+      final dur = m['duration'];
+      final durationMinutes = dur is int ? dur : int.tryParse(dur?.toString() ?? '');
       out.add(LiveSessionEntity(
         id: id,
         classId: cid,
@@ -160,6 +162,8 @@ class TeacherClassesRemoteDatasource {
         link: link,
         isActive: isActive,
         className: (cn == null || cn.isEmpty) ? null : cn,
+        durationMinutes: durationMinutes,
+        status: statusStr.isEmpty ? null : statusStr,
       ));
     }
     return out;

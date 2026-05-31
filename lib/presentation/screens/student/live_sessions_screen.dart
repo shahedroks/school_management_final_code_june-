@@ -3,11 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
 import 'package:high_school/core/utils/app_date_format.dart';
-import 'package:high_school/domain/entities/class_entity.dart';
+import 'package:high_school/core/utils/live_session_join_policy.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
-import 'package:high_school/domain/repositories/classes_repository.dart';
+import 'package:high_school/domain/entities/student_live_sessions_overview.dart';
 import 'package:high_school/domain/repositories/live_sessions_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
+import 'package:high_school/presentation/screens/student/student_live_session_launch.dart';
 
 class LiveSessionsScreen extends StatelessWidget {
   const LiveSessionsScreen({super.key});
@@ -17,27 +18,15 @@ class LiveSessionsScreen extends StatelessWidget {
     final lang = context.watch<LanguageProvider>();
 
     final liveRepo = context.read<LiveSessionsRepository>();
-    return FutureBuilder(
-      future: Future.wait([
-        liveRepo.getStudentLiveSessions(status: 'ongoing'),
-        liveRepo.getStudentLiveSessions(status: 'approved'),
-        context.read<ClassesRepository>().getClasses(),
-      ]),
+    return FutureBuilder<StudentLiveSessionsOverview>(
+      future: liveRepo.getStudentSessionsOverview(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final activeSessions = (snapshot.data![0] as List).cast<LiveSessionEntity>();
-        final upcomingSessions = (snapshot.data![1] as List).cast<LiveSessionEntity>();
-        final classes = (snapshot.data![2] as List).cast<ClassEntity>();
-
-        ClassEntity? classFor(LiveSessionEntity s) {
-          try {
-            return classes.firstWhere((c) => c.id == s.classId);
-          } catch (_) {
-            return null;
-          }
-        }
+        final overview = snapshot.data!;
+        final activeSessions = overview.active;
+        final upcomingSessions = overview.upcoming;
 
         return SingleChildScrollView(
           padding: const EdgeInsets.only(bottom: 24),
@@ -124,7 +113,10 @@ class LiveSessionsScreen extends StatelessWidget {
             else
               ...upcomingSessions.map((s) => _UpcomingSessionCard(
                     session: s,
-                    className: s.className ?? classFor(s)?.name ?? 'Class',
+                    className: s.className ??
+                        (s.subject != null && s.subject!.isNotEmpty
+                            ? s.subject!
+                            : 'Class'),
                     lang: lang,
                   )),
             if (activeSessions.isEmpty && upcomingSessions.isEmpty) ...[
@@ -183,7 +175,10 @@ class _ActiveSessionCard extends StatelessWidget {
               ),
             ),
             ElevatedButton.icon(
-              onPressed: () => context.go('/student/live-sessions/${session.id}'),
+              onPressed: () => context.go(
+                '/student/live-sessions/${session.id}',
+                extra: session,
+              ),
               icon: const Icon(Icons.video_call, size: 16),
               label: Text(lang.t('live.joinSession')),
               style: ElevatedButton.styleFrom(
@@ -213,6 +208,8 @@ class _UpcomingSessionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final platformStr = session.platform == LiveSessionPlatform.zoom ? 'Zoom' : 'Meet';
+    final canJoin = LiveSessionJoinPolicy.canJoinNow(session);
+    final opensHint = studentJoinOpensMessage(lang, session);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -225,27 +222,34 @@ class _UpcomingSessionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          Material(
             color: AppTheme.primary,
-            child: Row(
-              children: [
-                const Icon(Icons.video_call, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    className,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+            child: InkWell(
+              onTap: () => context.go(
+                '/student/live-sessions/${session.id}',
+                extra: session,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.video_call, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        className,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
           Container(
@@ -286,6 +290,48 @@ class _UpcomingSessionCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
                   ),
                 ),
+                const SizedBox(height: 14),
+                if (canJoin)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => launchStudentLiveSessionLink(context, lang, session),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: Text(lang.t('live.joinSession')),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                        side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.45), width: 1.2),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: Colors.blue.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            opensHint,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: Colors.blue.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

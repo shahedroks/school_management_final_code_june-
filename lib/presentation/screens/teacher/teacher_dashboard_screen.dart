@@ -3,10 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
 import 'package:high_school/core/utils/app_date_format.dart';
+import 'package:high_school/core/utils/teacher_live_session_buckets.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/entities/timetable_entity.dart';
 import 'package:high_school/domain/entities/teacher_dashboard_entity.dart';
+import 'package:high_school/domain/entities/teacher_live_sessions_overview.dart';
 import 'package:high_school/domain/repositories/classes_repository.dart';
 import 'package:high_school/domain/repositories/timetable_repository.dart';
 import 'package:high_school/domain/repositories/live_sessions_repository.dart';
@@ -110,6 +112,7 @@ class TeacherDashboardScreen extends StatelessWidget {
   Future<_TeacherDashboardData> _loadDashboard(
       BuildContext context, String teacherId, String today) async {
     final dashboardRepo = context.read<TeacherDashboardRepository>();
+    final sessionsRepo = context.read<LiveSessionsRepository>();
     final api = await dashboardRepo.getDashboard();
     if (api != null) {
       final classesForActions = api.myClassesPreview
@@ -128,28 +131,58 @@ class TeacherDashboardScreen extends StatelessWidget {
                 schoolYear: '',
               ))
           .toList();
-      return _TeacherDashboardData.fromApi(api, classesForActions);
+
+      var upcomingSessions =
+          List<TeacherDashboardUpcomingSession>.from(api.upcomingLiveSessions);
+      var todaysClasses =
+          List<TeacherDashboardTodayClass>.from(api.todaysClasses);
+
+      if (sessionsRepo.teacherSessionsApiConfigured) {
+        final overview = await sessionsRepo.getTeacherSessionsOverview();
+        if (overview.fromRemote) {
+          upcomingSessions = _mergeUpcomingSessions(
+            upcomingSessions,
+            _upcomingSessionsFromOverview(overview),
+          );
+        }
+      }
+
+      if (todaysClasses.isEmpty && today.isNotEmpty) {
+        final teacherClassesRepo = context.read<TeacherClassesRepository>();
+        todaysClasses = await _todaysClassesFromTeacherSchedule(
+          teacherClassesRepo,
+          teacherId,
+          today,
+        );
+      }
+
+      return _TeacherDashboardData.fromApi(
+        api,
+        classesForActions,
+        todaysClasses: todaysClasses,
+        upcomingSessions: upcomingSessions,
+      );
     }
     final classesRepo = context.read<ClassesRepository>();
     final timetableRepo = context.read<TimetableRepository>();
-    final sessionsRepo = context.read<LiveSessionsRepository>();
     final myClasses = await classesRepo.getClassesByTeacher(teacherId);
     final timetableResult = await timetableRepo.getTimetable();
-    final allSessions = await sessionsRepo.getLiveSessions();
     final now = DateTime.now();
     final todayClasses = today.isNotEmpty
         ? timetableResult.entries.where((e) => e.day == today).toList()
         : <TimetableEntryEntity>[];
-    final twoDaysLater = now.add(const Duration(days: 2));
-    final upcomingSessions = allSessions.where((s) {
-      final d = DateTime.tryParse(s.date);
-      return d != null &&
-          !d.isBefore(DateTime(now.year, now.month, now.day)) &&
-          (d.isBefore(DateTime(
-                  twoDaysLater.year, twoDaysLater.month, twoDaysLater.day)) ||
-              d.isAtSameMomentAs(DateTime(
-                  twoDaysLater.year, twoDaysLater.month, twoDaysLater.day)));
-    }).toList();
+
+    List<LiveSessionEntity> upcomingSessions;
+    if (sessionsRepo.teacherSessionsApiConfigured) {
+      final overview = await sessionsRepo.getTeacherSessionsOverview();
+      upcomingSessions = overview.fromRemote
+          ? _liveSessionsFromOverview(overview)
+          : _filterUpcomingMock(await sessionsRepo.getLiveSessions(), now);
+    } else {
+      upcomingSessions =
+          _filterUpcomingMock(await sessionsRepo.getLiveSessions(), now);
+    }
+
     final pendingGrading =
         MockData.submissions.where((s) => s.grade == null).length;
     final gradedCount =
@@ -626,7 +659,7 @@ class TeacherDashboardScreen extends StatelessWidget {
                 ? Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Center(
-                        child: Text('No upcoming live sessions',
+                        child: Text(lang.t('live.noUpcomingSessions'),
                             style: TextStyle(
                                 fontSize: 12, color: Colors.grey.shade600))))
                 : Column(
@@ -1003,7 +1036,7 @@ class TeacherDashboardScreen extends StatelessWidget {
                 ? Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Center(
-                        child: Text('No upcoming live sessions',
+                        child: Text(lang.t('live.noUpcomingSessions'),
                             style: TextStyle(
                                 fontSize: 12, color: Colors.grey.shade600))))
                 : Column(
@@ -1344,6 +1377,184 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+TeacherDashboardUpcomingSession _upcomingSessionFromEntity(LiveSessionEntity s) {
+  final dateRaw = s.date.trim();
+  final dateStr =
+      dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
+  return TeacherDashboardUpcomingSession(
+    id: s.id,
+    title: s.title,
+    date: dateStr.isEmpty ? null : dateStr,
+    time: s.time.trim().isEmpty ? null : s.time.trim(),
+    zoomLink: s.link.trim().isEmpty ? null : s.link.trim(),
+  );
+}
+
+bool _includeSessionInUpcoming(LiveSessionEntity s) =>
+    TeacherLiveSessionBuckets.isUpcoming(s);
+
+List<LiveSessionEntity> _liveSessionsFromOverview(
+    TeacherLiveSessionsOverview overview) {
+  final seen = <String>{};
+  final out = <LiveSessionEntity>[];
+  for (final s in [...overview.activeNow, ...overview.upcoming]) {
+    if (!_includeSessionInUpcoming(s)) continue;
+    if (!seen.add(s.id)) continue;
+    out.add(s);
+  }
+  out.sort(_compareLiveSessionDateTime);
+  return out;
+}
+
+List<TeacherDashboardUpcomingSession> _upcomingSessionsFromOverview(
+    TeacherLiveSessionsOverview overview) {
+  return _liveSessionsFromOverview(overview)
+      .map(_upcomingSessionFromEntity)
+      .toList();
+}
+
+List<TeacherDashboardUpcomingSession> _mergeUpcomingSessions(
+  List<TeacherDashboardUpcomingSession> primary,
+  List<TeacherDashboardUpcomingSession> supplemental,
+) {
+  final seen = primary.map((e) => e.id).where((id) => id.isNotEmpty).toSet();
+  final merged = List<TeacherDashboardUpcomingSession>.from(primary);
+  for (final s in supplemental) {
+    if (s.id.isEmpty || seen.contains(s.id)) continue;
+    seen.add(s.id);
+    merged.add(s);
+  }
+  merged.sort(_compareUpcomingSessionDateTime);
+  return merged;
+}
+
+List<LiveSessionEntity> _filterUpcomingMock(
+    List<LiveSessionEntity> all, DateTime now) {
+  final todayStart = DateTime(now.year, now.month, now.day);
+  return all.where((s) {
+    if (s.isCompleted) return false;
+    if (s.isActive) return true;
+    final dt = _parseLiveSessionDateTime(s);
+    return dt != null && !dt.isBefore(todayStart);
+  }).toList()
+    ..sort(_compareLiveSessionDateTime);
+}
+
+DateTime? _parseLiveSessionDateTime(LiveSessionEntity s) {
+  final dateRaw = s.date.trim();
+  if (dateRaw.length < 10) return null;
+  final hm = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(s.time.trim());
+  if (hm == null) return DateTime.tryParse(dateRaw.substring(0, 10));
+  final parts = dateRaw.substring(0, 10).split('-');
+  if (parts.length != 3) return null;
+  return DateTime(
+    int.parse(parts[0]),
+    int.parse(parts[1]),
+    int.parse(parts[2]),
+    int.parse(hm.group(1)!),
+    int.parse(hm.group(2)!),
+  );
+}
+
+DateTime? _parseUpcomingSessionDateTime(TeacherDashboardUpcomingSession s) {
+  final dateRaw = s.date?.trim() ?? '';
+  if (dateRaw.length < 10) return null;
+  final timeRaw = s.time?.trim() ?? '';
+  final hm = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(timeRaw);
+  if (hm == null) return DateTime.tryParse(dateRaw.substring(0, 10));
+  final parts = dateRaw.substring(0, 10).split('-');
+  if (parts.length != 3) return null;
+  return DateTime(
+    int.parse(parts[0]),
+    int.parse(parts[1]),
+    int.parse(parts[2]),
+    int.parse(hm.group(1)!),
+    int.parse(hm.group(2)!),
+  );
+}
+
+int _compareLiveSessionDateTime(LiveSessionEntity a, LiveSessionEntity b) {
+  final da = _parseLiveSessionDateTime(a);
+  final db = _parseLiveSessionDateTime(b);
+  if (da == null && db == null) return 0;
+  if (da == null) return 1;
+  if (db == null) return -1;
+  return da.compareTo(db);
+}
+
+int _compareUpcomingSessionDateTime(
+  TeacherDashboardUpcomingSession a,
+  TeacherDashboardUpcomingSession b,
+) {
+  final da = _parseUpcomingSessionDateTime(a);
+  final db = _parseUpcomingSessionDateTime(b);
+  if (da == null && db == null) return 0;
+  if (da == null) return 1;
+  if (db == null) return -1;
+  return da.compareTo(db);
+}
+
+String? _weekdayToScheduleKey(String weekday) {
+  switch (weekday.toLowerCase()) {
+    case 'monday':
+      return 'mon';
+    case 'tuesday':
+      return 'tue';
+    case 'wednesday':
+      return 'wed';
+    case 'thursday':
+      return 'thu';
+    case 'friday':
+      return 'fri';
+    default:
+      return null;
+  }
+}
+
+({String? start, String? end})? _parseScheduleSlotTimes(String slot) {
+  final match = RegExp(
+    r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})',
+  ).firstMatch(slot);
+  if (match == null) return null;
+  return (start: match.group(1), end: match.group(2));
+}
+
+Future<List<TeacherDashboardTodayClass>> _todaysClassesFromTeacherSchedule(
+  TeacherClassesRepository repo,
+  String teacherId,
+  String todayWeekday,
+) async {
+  final dayKey = _weekdayToScheduleKey(todayWeekday);
+  if (dayKey == null) return [];
+  final dayLabel = AppDateFormat.scheduleDay(dayKey);
+  final classes = await repo.getMyClasses(teacherId);
+  final out = <TeacherDashboardTodayClass>[];
+  for (final c in classes) {
+    final schedule = c.schedule.trim();
+    if (schedule.isEmpty || !schedule.contains(dayLabel)) continue;
+    final slot = schedule
+        .split(',')
+        .map((part) => part.trim())
+        .firstWhere(
+          (part) => part.contains(dayLabel),
+          orElse: () => '',
+        );
+    if (slot.isEmpty) continue;
+    final times = _parseScheduleSlotTimes(slot);
+    out.add(
+      TeacherDashboardTodayClass(
+        classId: c.id,
+        subject: c.subject,
+        gradeLevel: c.level,
+        studentsCount: c.students,
+        startTime: times?.start,
+        endTime: times?.end,
+      ),
+    );
+  }
+  return out;
+}
+
 /// Holds either API dashboard data or fallback (classes + timetable + sessions).
 class _TeacherDashboardData {
   _TeacherDashboardData({
@@ -1375,7 +1586,11 @@ class _TeacherDashboardData {
   final List<TeacherDashboardClassPreview>? myClassesPreviewApi;
 
   factory _TeacherDashboardData.fromApi(
-      TeacherDashboardEntity api, List<ClassEntity> classesForActions) {
+    TeacherDashboardEntity api,
+    List<ClassEntity> classesForActions, {
+    List<TeacherDashboardTodayClass>? todaysClasses,
+    List<TeacherDashboardUpcomingSession>? upcomingSessions,
+  }) {
     return _TeacherDashboardData(
       isFromApi: true,
       cardsMyClasses: api.cards.myClasses,
@@ -1383,8 +1598,8 @@ class _TeacherDashboardData {
       cardsPendingGrading: api.cards.pendingGrading,
       cardsGraded: api.cards.graded,
       classesForActions: classesForActions,
-      todaysClassesApi: api.todaysClasses,
-      upcomingSessionsApi: api.upcomingLiveSessions,
+      todaysClassesApi: todaysClasses ?? api.todaysClasses,
+      upcomingSessionsApi: upcomingSessions ?? api.upcomingLiveSessions,
       recentSubmissionsApi: api.recentSubmissions,
       myClassesPreviewApi: api.myClassesPreview,
     );

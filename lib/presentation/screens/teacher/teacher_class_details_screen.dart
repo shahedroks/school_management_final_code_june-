@@ -19,6 +19,7 @@ import 'package:high_school/domain/repositories/live_sessions_repository.dart';
 import 'package:high_school/domain/repositories/students_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
 import 'package:high_school/presentation/screens/teacher/teacher_lesson_assignment_dialogs.dart';
+import 'package:high_school/presentation/screens/teacher/teacher_live_session_create_dialog.dart';
 import 'package:high_school/presentation/screens/teacher/teacher_lesson_media_screen.dart';
 import 'package:high_school/presentation/screens/teacher/teacher_pdf_attachment_screen.dart';
 
@@ -138,7 +139,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
                     _buildLessonsTab(context, lang, cls, lessons),
                     _buildAssignmentsTab(context, lang, cls, assignmentsToShow),
                     _buildStudentsTab(context, lang, students),
-                    _buildLiveTab(context, lang, liveSessions),
+                    _buildLiveTab(context, lang, cls, liveSessions),
                     _buildAnalyticsTab(context, lang, cls, lessons, assignmentsToShow, liveSessions, apiAnalytics),
                   ],
                 ),
@@ -1010,7 +1011,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
     );
   }
 
-  Widget _buildLiveTab(BuildContext context, LanguageProvider lang, List<LiveSessionEntity> sessions) {
+  Widget _buildLiveTab(BuildContext context, LanguageProvider lang, ClassEntity cls, List<LiveSessionEntity> sessions) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1025,6 +1026,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
         else
           ...sessions.map((s) {
             final platformStr = s.platform == LiveSessionPlatform.zoom ? 'Zoom' : 'Meet';
+            final canManage = s.canManage;
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.2))),
@@ -1038,6 +1040,22 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
                         Expanded(child: Text(s.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
                         if (s.isActive) _badge('Live Now', Colors.red),
                         _badge(platformStr, Colors.blue),
+                        if (canManage) ...[
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            onPressed: () => _showEditLiveSessionDialog(context, lang, cls, s),
+                            icon: const Icon(Icons.edit_outlined, size: 20, color: AppTheme.primary),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            onPressed: () => _confirmDeleteLiveSession(context, lang, s),
+                            icon: Icon(Icons.delete_outline_rounded, size: 20, color: Colors.red.shade600),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -1059,6 +1077,58 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen> {
           }),
       ],
     );
+  }
+
+  void _showEditLiveSessionDialog(
+    BuildContext context,
+    LanguageProvider lang,
+    ClassEntity cls,
+    LiveSessionEntity session,
+  ) {
+    showTeacherCreateLiveSessionDialog(
+      context,
+      lang,
+      cls,
+      editing: session,
+      onSuccess: () {
+        if (!mounted) return;
+        setState(() => _refreshKey++);
+      },
+    );
+  }
+
+  void _confirmDeleteLiveSession(BuildContext context, LanguageProvider lang, LiveSessionEntity session) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr(lang, 'live.deleteSession', 'Delete Session')),
+        content: Text('${tr(lang, 'common.confirm', 'Are you sure you want to delete')} "${session.title}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(lang.t('common.cancel'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _deleteLiveSession(context, lang, session);
+            },
+            child: Text(tr(lang, 'common.delete', 'Delete')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteLiveSession(BuildContext context, LanguageProvider lang, LiveSessionEntity session) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final repo = context.read<LiveSessionsRepository>();
+    final ok = await repo.deleteTeacherLiveSession(session.id);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _refreshKey++);
+      messenger?.showSnackBar(SnackBar(content: Text(tr(lang, 'live.sessionDeleted', 'Session deleted.'))));
+    } else {
+      messenger?.showSnackBar(SnackBar(content: Text(tr(lang, 'live.deleteSessionFailed', 'Could not delete session.'))));
+    }
   }
 
   Widget _buildAnalyticsTab(BuildContext context, LanguageProvider lang, ClassEntity cls, List<LessonEntity> lessons, List<AssignmentEntity> assignments, List<LiveSessionEntity> liveSessions, TeacherClassAnalytics? api) {

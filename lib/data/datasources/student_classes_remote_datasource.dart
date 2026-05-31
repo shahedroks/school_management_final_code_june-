@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:high_school/core/constants/app_constants.dart';
 import 'package:high_school/core/network/api_response_helper.dart';
 import 'package:high_school/core/utils/app_date_format.dart';
+import 'package:high_school/data/datasources/live_session_json_parser.dart';
 import 'package:high_school/domain/entities/assignment_entity.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/lesson_entity.dart';
@@ -56,10 +57,13 @@ class StudentClassesRemoteDatasource {
       if (cls == null) return null;
       final lessons = _parseLessonDetails(data['lessonDetails'], cls.id);
       final assignments = _parseAssignmentDetails(data['assignmentDetails'], cls.id);
+      final liveSessions =
+          LiveSessionJsonParser.parseList(data['liveSessionDetails'], fallbackClassId: cls.id);
       return StudentClassDetailResult(
         classEntity: cls,
         lessons: lessons,
         assignments: assignments,
+        liveSessions: liveSessions,
       );
     } on UnauthorizedApiException {
       return null;

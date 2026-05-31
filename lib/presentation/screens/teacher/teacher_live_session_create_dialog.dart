@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:high_school/core/theme/app_theme.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
+import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/repositories/live_sessions_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
 import 'package:high_school/presentation/screens/teacher/teacher_dialog_date_time.dart';
@@ -11,12 +12,25 @@ String _tr(LanguageProvider lang, String key, String fallback) {
   return (s == key || s.isEmpty) ? fallback : s;
 }
 
+String _sessionDateForForm(String raw) {
+  final t = raw.trim();
+  if (t.length >= 10 && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(t.substring(0, 10))) {
+    return t.substring(0, 10);
+  }
+  final parsed = DateTime.tryParse(t);
+  if (parsed != null) {
+    return teacherFormatYmd(parsed.toLocal());
+  }
+  return t;
+}
+
 /// Same flow as [showTeacherCreateLessonDialog]: caller picks a class first, then opens this form.
 /// Sends `gradeId`, `subjectId`, `classId` from [cls] with POST /api/v1/sessions when API is configured.
 void showTeacherCreateLiveSessionDialog(
   BuildContext hostContext,
   LanguageProvider lang,
   ClassEntity cls, {
+  LiveSessionEntity? editing,
   VoidCallback? onSuccess,
 }) {
   showDialog<void>(
@@ -26,6 +40,7 @@ void showTeacherCreateLiveSessionDialog(
       hostContext: hostContext,
       lang: lang,
       cls: cls,
+      editing: editing,
       onSuccess: onSuccess,
     ),
   );
@@ -36,12 +51,14 @@ class _TeacherCreateLiveSessionDialog extends StatefulWidget {
     required this.hostContext,
     required this.lang,
     required this.cls,
+    this.editing,
     this.onSuccess,
   });
 
   final BuildContext hostContext;
   final LanguageProvider lang;
   final ClassEntity cls;
+  final LiveSessionEntity? editing;
   final VoidCallback? onSuccess;
 
   @override
@@ -72,26 +89,69 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
   bool _submitting = false;
   /// Inline validation under the Zoom link field (visible on submit / blur).
   String? _zoomLinkError;
+  /// Shown inside the dialog so errors are not hidden behind the modal.
+  String? _submitError;
 
   static const _labelColor = Color(0xFF1F3C88);
   static const _borderColor = Color(0xFFD1D5DB);
+
+  bool get _editLocked =>
+      widget.editing != null && !widget.editing!.canManage;
+
+  String _lockedEditMessage(LanguageProvider lang) {
+    final session = widget.editing!;
+    if (session.isActive) {
+      return _tr(lang, 'live.cannotEditLiveSession', 'This session is live and cannot be edited.');
+    }
+    if (session.isCompleted) {
+      return _tr(
+        lang,
+        'live.cannotEditCompletedSession',
+        'This session is completed and cannot be edited.',
+      );
+    }
+    if (session.isScheduledPast) {
+      return _tr(
+        lang,
+        'live.cannotEditPastSession',
+        'This session has already passed and cannot be edited.',
+      );
+    }
+    return _tr(lang, 'live.cannotEditSession', 'This session cannot be edited.');
+  }
+
+  void _setSubmitError(String text) {
+    setState(() => _submitError = text);
+  }
+
+  void _clearSubmitError() {
+    if (_submitError != null) setState(() => _submitError = null);
+  }
 
   @override
   void initState() {
     super.initState();
     final c = widget.cls;
-    final defaultName =
-        c.name.trim().isNotEmpty ? c.name.trim() : '${c.subject} · ${c.level}';
-    _titleCtrl = TextEditingController();
+    final session = widget.editing;
+    final defaultName = session?.className?.trim().isNotEmpty == true
+        ? session!.className!.trim()
+        : (c.name.trim().isNotEmpty ? c.name.trim() : '${c.subject} · ${c.level}');
+    _titleCtrl = TextEditingController(text: session?.title ?? '');
     _classNameCtrl = TextEditingController(text: defaultName);
     _dateCtrl = TextEditingController(
-      text: teacherFormatYmd(DateTime.now()),
+      text: session != null && session.date.isNotEmpty
+          ? _sessionDateForForm(session.date)
+          : teacherFormatYmd(DateTime.now()),
     );
     _timeCtrl = TextEditingController(
-      text: teacherFormatHm24(const TimeOfDay(hour: 10, minute: 0)),
+      text: session?.time.trim().isNotEmpty == true
+          ? session!.time.trim()
+          : teacherFormatHm24(const TimeOfDay(hour: 10, minute: 0)),
     );
-    _durationCtrl = TextEditingController(text: '60');
-    _zoomCtrl = TextEditingController();
+    _durationCtrl = TextEditingController(
+      text: '${session?.durationMinutes ?? 60}',
+    );
+    _zoomCtrl = TextEditingController(text: session?.link ?? '');
   }
 
   @override
@@ -216,32 +276,67 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
     m?.showSnackBar(snack);
   }
 
+  Widget _submitErrorBanner(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 20, color: Colors.red.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: Colors.red.shade900,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     final lang = widget.lang;
+    _clearSubmitError();
+    if (_editLocked) {
+      _setSubmitError(_lockedEditMessage(lang));
+      return;
+    }
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      _showSnack(
+      _setSubmitError(
         '${_tr(lang, 'live.sessionTitle', 'Session Title')} ${_tr(lang, 'live.fieldRequired', 'is required')}',
       );
       return;
     }
     final date = _dateCtrl.text.trim();
     if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date)) {
-      _showSnack(
+      _setSubmitError(
         _tr(lang, 'live.dateFormatHint', 'Use date format YYYY-MM-DD'),
       );
       return;
     }
     final time = _timeCtrl.text.trim();
     if (!RegExp(r'^\d{1,2}:\d{2}$').hasMatch(time)) {
-      _showSnack(
+      _setSubmitError(
         _tr(lang, 'live.timeFormatHint', 'Use time format HH:mm (24-hour)'),
       );
       return;
     }
     final dur = int.tryParse(_durationCtrl.text.trim());
     if (dur == null || dur <= 0) {
-      _showSnack(
+      _setSubmitError(
         _tr(
           lang,
           'live.durationInvalid',
@@ -281,7 +376,7 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
 
     if (repo.teacherSessionsApiConfigured) {
       if (gid.isEmpty || sid.isEmpty || cid.isEmpty) {
-        _showSnack(
+        _setSubmitError(
           _tr(
             lang,
             'live.missingClassIds',
@@ -294,19 +389,42 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
 
     setState(() => _submitting = true);
     try {
-      final result = await repo.createTeacherLiveSession(
-        title: title,
-        gradeId: gid,
-        subjectId: sid,
-        classId: cid,
-        className: _classNameCtrl.text.trim(),
-        date: date,
-        time: time,
-        duration: dur,
-        zoomLink: zoom,
-      );
+      final editing = widget.editing;
+      final result = editing == null
+          ? await repo.createTeacherLiveSession(
+              title: title,
+              gradeId: gid,
+              subjectId: sid,
+              classId: cid,
+              className: _classNameCtrl.text.trim(),
+              date: date,
+              time: time,
+              duration: dur,
+              zoomLink: zoom,
+            )
+          : await repo.updateTeacherLiveSession(
+              sessionId: editing.id,
+              title: title,
+              gradeId: gid,
+              subjectId: sid,
+              classId: cid,
+              className: _classNameCtrl.text.trim(),
+              date: date,
+              time: time,
+              duration: dur,
+              zoomLink: zoom,
+            );
       if (!mounted) return;
       if (result.success) {
+        if (editing != null) {
+          setState(() => _submitting = false);
+          _showSnack(
+            _tr(lang, 'live.sessionUpdated', 'Session updated successfully.'),
+          );
+          _popCreateRoute();
+          widget.onSuccess?.call();
+          return;
+        }
         // Always show this approval copy in the popup (matches product copy / API intent).
         final msg = _tr(
           lang,
@@ -355,18 +473,22 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
         );
       } else {
         setState(() => _submitting = false);
-        _showSnack(
+        _setSubmitError(
           result.message ??
               _tr(
                 lang,
-                'live.createSessionFailed',
-                'Could not create session. Try again.',
+                editing == null ? 'live.createSessionFailed' : 'live.updateSessionFailed',
+                editing == null
+                    ? 'Could not create session. Try again.'
+                    : 'Could not update session. Try again.',
               ),
         );
       }
     } catch (e) {
-      if (mounted) setState(() => _submitting = false);
-      _showSnack(e.toString());
+      if (mounted) {
+        setState(() => _submitting = false);
+        _setSubmitError(e.toString());
+      }
     }
   }
 
@@ -401,7 +523,9 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
                 children: [
                   Expanded(
                     child: Text(
-                      _tr(lang, 'live.createLiveSession', 'Create Live Session'),
+                      widget.editing == null
+                          ? _tr(lang, 'live.createLiveSession', 'Create Live Session')
+                          : _tr(lang, 'live.editLiveSession', 'Edit Live Session'),
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -416,6 +540,13 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
                 ],
               ),
               const SizedBox(height: 8),
+              if (_editLocked) ...[
+                _submitErrorBanner(_lockedEditMessage(lang)),
+                const SizedBox(height: 12),
+              ] else if (_submitError != null) ...[
+                _submitErrorBanner(_submitError!),
+                const SizedBox(height: 12),
+              ],
               _requiredLabel(
                 _tr(lang, 'teacherClassDetails.classFromServer', 'Class'),
               ),
@@ -482,6 +613,8 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
               const SizedBox(height: 4),
               TextField(
                 controller: _titleCtrl,
+                readOnly: _editLocked,
+                onChanged: (_) => _clearSubmitError(),
                 decoration: _decoration(
                   _tr(
                     lang,
@@ -635,7 +768,7 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton(
-                      onPressed: _submitting ? null : _submit,
+                      onPressed: (_submitting || _editLocked) ? null : _submit,
                       style: FilledButton.styleFrom(
                         backgroundColor: AppTheme.primary,
                         foregroundColor: Colors.white,
@@ -654,11 +787,17 @@ class _TeacherCreateLiveSessionDialogState extends State<_TeacherCreateLiveSessi
                               ),
                             )
                           : Text(
-                              _tr(
-                                lang,
-                                'live.createSession',
-                                'Create Session',
-                              ),
+                              widget.editing == null
+                                  ? _tr(
+                                      lang,
+                                      'live.createSession',
+                                      'Create Session',
+                                    )
+                                  : _tr(
+                                      lang,
+                                      'live.updateSession',
+                                      'Update Session',
+                                    ),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                               textAlign: TextAlign.center,

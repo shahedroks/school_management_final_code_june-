@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:high_school/core/theme/app_theme.dart';
 import 'package:high_school/core/utils/app_date_format.dart';
-import 'package:high_school/domain/entities/class_entity.dart';
+import 'package:high_school/core/utils/live_session_join_policy.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
-import 'package:high_school/domain/repositories/classes_repository.dart';
 import 'package:high_school/domain/repositories/live_sessions_repository.dart';
 import 'package:high_school/presentation/providers/language_provider.dart';
+import 'package:high_school/presentation/screens/student/student_live_session_launch.dart';
 
 class LiveSessionDetailScreen extends StatelessWidget {
   const LiveSessionDetailScreen({
@@ -31,40 +30,46 @@ class LiveSessionDetailScreen extends StatelessWidget {
     final lang = context.watch<LanguageProvider>();
 
     if (passedSession != null) {
-      final s = passedSession!;
-      final platformStr =
-          s.platform == LiveSessionPlatform.zoom ? 'Zoom' : 'Google Meet';
-      final formattedDate = _formatSessionDate(s.date);
-      final classDisplayName = s.classId.isNotEmpty ? s.classId : '-';
-      return _buildContent(context, lang: lang, session: s,
-          classDisplayName: classDisplayName, formattedDate: formattedDate,
-          platformStr: platformStr);
+      final needsFetch = passedSession!.link.trim().isEmpty;
+      return FutureBuilder<LiveSessionEntity?>(
+        future: needsFetch
+            ? context
+                .read<LiveSessionsRepository>()
+                .getStudentLiveSessionById(sessionId)
+            : Future.value(passedSession),
+        builder: (context, snapshot) {
+          final s = snapshot.data ?? passedSession!;
+          final platformStr =
+              s.platform == LiveSessionPlatform.zoom ? 'Zoom' : 'Google Meet';
+          final formattedDate = _formatSessionDate(s.date);
+          final classDisplayName =
+              (s.className != null && s.className!.isNotEmpty)
+                  ? s.className!
+                  : (s.subject != null && s.subject!.isNotEmpty
+                      ? s.subject!
+                      : '-');
+          if (needsFetch && !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return _buildContent(
+            context,
+            lang: lang,
+            session: s,
+            classDisplayName: classDisplayName,
+            formattedDate: formattedDate,
+            platformStr: platformStr,
+          );
+        },
+      );
     }
 
-    return FutureBuilder(
-      future: Future.wait([
-        context.read<LiveSessionsRepository>().getLiveSessions(),
-        context.read<ClassesRepository>().getClasses(),
-      ]),
+    return FutureBuilder<LiveSessionEntity?>(
+      future: context.read<LiveSessionsRepository>().getStudentLiveSessionById(sessionId),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final sessions = (snapshot.data![0] as List).cast<LiveSessionEntity>();
-        final classes = (snapshot.data![1] as List).cast<ClassEntity>();
-        LiveSessionEntity? session;
-        try {
-          session = sessions.firstWhere((s) => s.id == sessionId);
-        } catch (_) {
-          session = null;
-        }
-        ClassEntity? classData;
-        if (session != null) {
-          try {
-            classData = classes.firstWhere((c) => c.id == session!.classId);
-          } catch (_) {}
-        }
-
+        final session = snapshot.data;
         if (session == null) {
           return Center(
             child: Column(
@@ -85,7 +90,9 @@ class LiveSessionDetailScreen extends StatelessWidget {
         final platformStr =
             s.platform == LiveSessionPlatform.zoom ? 'Zoom' : 'Google Meet';
         final formattedDate = _formatSessionDate(s.date);
-        final classDisplayName = classData?.name ?? '-';
+        final classDisplayName = (s.className != null && s.className!.isNotEmpty)
+            ? s.className!
+            : (s.subject != null && s.subject!.isNotEmpty ? s.subject! : '-');
         return _buildContent(context, lang: lang, session: s,
             classDisplayName: classDisplayName, formattedDate: formattedDate,
             platformStr: platformStr);
@@ -102,6 +109,8 @@ class LiveSessionDetailScreen extends StatelessWidget {
     required String platformStr,
   }) {
     final s = session;
+    final canJoin = LiveSessionJoinPolicy.canJoinNow(s);
+    final opensHint = studentJoinOpensMessage(lang, s);
     return SingleChildScrollView(
           padding: const EdgeInsets.only(bottom: 24),
           child: Column(
@@ -232,7 +241,9 @@ class LiveSessionDetailScreen extends StatelessWidget {
                                         Colors.white.withValues(alpha: 0.95)),
                                 const SizedBox(height: 12),
                                 Text(
-                                  'Ready to Join?',
+                                  canJoin
+                                      ? lang.t('live.readyToJoin')
+                                      : lang.t('live.joinNotYetAvailable'),
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -241,7 +252,10 @@ class LiveSessionDetailScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Click the button below to join the live session',
+                                  canJoin
+                                      ? lang.t('live.readyToJoinHint')
+                                      : opensHint,
+                                  textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.white.withValues(alpha: 0.9),
@@ -251,54 +265,10 @@ class LiveSessionDetailScreen extends StatelessWidget {
                                 SizedBox(
                                   width: double.infinity,
                                   child: OutlinedButton.icon(
-                                    onPressed: () async {
-                                      final zoomLink = s.link.trim();
-                                      if (zoomLink.isEmpty) {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(lang
-                                                    .t('live.meetingLink'))),
-                                          );
-                                        }
-                                        return;
-                                      }
-                                      final uri = Uri.tryParse(zoomLink);
-                                      if (uri == null) {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(lang
-                                                    .t('live.meetingLink'))),
-                                          );
-                                        }
-                                        return;
-                                      }
-                                      try {
-                                        final launched = await launchUrl(uri,
-                                            mode: LaunchMode
-                                                .externalApplication);
-                                        if (!launched && context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(lang
-                                                    .t('live.meetingLink'))),
-                                          );
-                                        }
-                                      } catch (_) {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(lang
-                                                    .t('live.meetingLink'))),
-                                          );
-                                        }
-                                      }
-                                    },
+                                    onPressed: canJoin
+                                        ? () => launchStudentLiveSessionLink(
+                                              context, lang, s)
+                                        : null,
                                     icon:
                                         const Icon(Icons.open_in_new, size: 18),
                                     label: Text(lang.t('live.joinSession')),

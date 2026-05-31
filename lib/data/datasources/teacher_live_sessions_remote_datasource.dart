@@ -236,6 +236,7 @@ class TeacherLiveSessionsRemoteDatasource {
     final subject = m['subject']?.toString();
     final dur = m['duration'];
     final durationMinutes = dur is int ? dur : int.tryParse(dur?.toString() ?? '');
+    final statusStr = (m['status']?.toString() ?? '').toLowerCase().trim();
 
     return LiveSessionEntity(
       id: id,
@@ -250,6 +251,92 @@ class TeacherLiveSessionsRemoteDatasource {
       gradeLevel: (grade != null && grade.isNotEmpty) ? grade : null,
       subject: (subject != null && subject.isNotEmpty) ? subject : null,
       durationMinutes: durationMinutes,
+      status: statusStr.isEmpty ? null : statusStr,
+    );
+  }
+
+  String? _extractErrorMessage(Map<String, dynamic>? decoded, String rawBody, int code) {
+    if (decoded == null) {
+      return rawBody.isNotEmpty ? rawBody : 'Request failed ($code)';
+    }
+    final msg = decoded['message']?.toString();
+    if (msg != null && msg.trim().isNotEmpty) return msg.trim();
+    final err = decoded['error']?.toString();
+    if (err != null && err.trim().isNotEmpty) return err.trim();
+    final errors = decoded['errors'];
+    if (errors is List && errors.isNotEmpty) {
+      return errors.map((e) => e.toString()).join(', ');
+    }
+    if (errors is Map && errors.isNotEmpty) {
+      return errors.values.map((e) => e.toString()).join(', ');
+    }
+    return rawBody.isNotEmpty ? rawBody : 'Request failed ($code)';
+  }
+
+  Map<String, dynamic> _sessionBody({
+    required String title,
+    required String gradeId,
+    required String subjectId,
+    required String classId,
+    required String className,
+    required String date,
+    required String time,
+    required int duration,
+    required String zoomLink,
+  }) {
+    return {
+      'title': title.trim(),
+      'gradeId': gradeId.trim(),
+      'subjectId': subjectId.trim(),
+      'classId': classId.trim(),
+      'className': className.trim(),
+      'date': date.trim(),
+      'time': time.trim(),
+      'duration': duration,
+      'zoomLink': zoomLink.trim(),
+    };
+  }
+
+  CreateLiveSessionResult _parseMutationResponse(http.Response response) {
+    Map<String, dynamic>? decoded;
+    final rawBody = response.body.trim();
+    if (rawBody.isNotEmpty) {
+      try {
+        final raw = jsonDecode(response.body);
+        if (raw is Map<String, dynamic>) {
+          decoded = raw;
+        } else if (raw is Map) {
+          decoded = Map<String, dynamic>.from(raw);
+        }
+      } catch (_) {
+        decoded = null;
+      }
+    }
+    if (decoded != null) ensureAuthorized(decoded);
+
+    final code = response.statusCode;
+    if (code == 200 || code == 201) {
+      if (decoded == null) {
+        return const CreateLiveSessionResult(success: true);
+      }
+      final s = decoded['success'];
+      final hasData = decoded['data'] != null;
+      final ok = s == true ||
+          s == 1 ||
+          (s is String && s.toLowerCase() == 'true') ||
+          (s == null && hasData);
+      if (!ok) {
+        return CreateLiveSessionResult(
+          success: false,
+          message: _extractErrorMessage(decoded, rawBody, code),
+        );
+      }
+      final msg = decoded['message']?.toString();
+      return CreateLiveSessionResult(success: true, message: msg);
+    }
+    return CreateLiveSessionResult(
+      success: false,
+      message: _extractErrorMessage(decoded, rawBody, code),
     );
   }
 
@@ -274,17 +361,17 @@ class TeacherLiveSessionsRemoteDatasource {
     }
 
     final uri = Uri.parse('$_apiBase/sessions');
-    final body = <String, dynamic>{
-      'title': title.trim(),
-      'gradeId': gradeId.trim(),
-      'subjectId': subjectId.trim(),
-      'classId': classId.trim(),
-      'className': className.trim(),
-      'date': date.trim(),
-      'time': time.trim(),
-      'duration': duration,
-      'zoomLink': zoomLink.trim(),
-    };
+    final body = _sessionBody(
+      title: title,
+      gradeId: gradeId,
+      subjectId: subjectId,
+      classId: classId,
+      className: className,
+      date: date,
+      time: time,
+      duration: duration,
+      zoomLink: zoomLink,
+    );
 
     try {
       final response = await http.post(
@@ -295,47 +382,111 @@ class TeacherLiveSessionsRemoteDatasource {
         },
         body: jsonEncode(body),
       );
-
-      Map<String, dynamic>? decoded;
-      final rawBody = response.body.trim();
-      if (rawBody.isNotEmpty) {
-        try {
-          final raw = jsonDecode(response.body);
-          if (raw is Map<String, dynamic>) {
-            decoded = raw;
-          } else if (raw is Map) {
-            decoded = Map<String, dynamic>.from(raw);
-          }
-        } catch (_) {
-          decoded = null;
-        }
-      }
-      if (decoded != null) ensureAuthorized(decoded);
-
-      final code = response.statusCode;
-      if (code == 200 || code == 201) {
-        if (decoded == null) {
-          return const CreateLiveSessionResult(
-            success: true,
-            message: 'Session created.',
-          );
-        }
-        final s = decoded['success'];
-        final hasData = decoded['data'] != null;
-        final ok = s == true ||
-            s == 1 ||
-            (s is String && s.toLowerCase() == 'true') ||
-            (s == null && hasData);
-        final msg = decoded['message']?.toString();
-        return CreateLiveSessionResult(success: ok, message: msg);
-      }
-      final failMsg = decoded?['message']?.toString() ??
-          (rawBody.isNotEmpty ? rawBody : 'Request failed ($code)');
-      return CreateLiveSessionResult(success: false, message: failMsg);
+      return _parseMutationResponse(response);
     } on UnauthorizedApiException {
       return const CreateLiveSessionResult(success: false, message: 'Unauthorized');
     } catch (e) {
       return CreateLiveSessionResult(success: false, message: e.toString());
+    }
+  }
+
+  /// PUT /sessions/:id — update live session.
+  Future<CreateLiveSessionResult> updateSession({
+    required String sessionId,
+    required String title,
+    required String gradeId,
+    required String subjectId,
+    required String classId,
+    required String className,
+    required String date,
+    required String time,
+    required int duration,
+    required String zoomLink,
+  }) async {
+    if (!isConfigured) {
+      return const CreateLiveSessionResult(success: false, message: 'API not configured');
+    }
+    final token = _prefs.getString(AppConstants.sessionTokenKey);
+    if (token == null || token.isEmpty) {
+      return const CreateLiveSessionResult(success: false, message: 'Not signed in');
+    }
+
+    final id = sessionId.trim();
+    if (id.isEmpty) {
+      return const CreateLiveSessionResult(success: false, message: 'Invalid session id');
+    }
+
+    final uri = Uri.parse('$_apiBase/sessions/$id');
+    final body = _sessionBody(
+      title: title,
+      gradeId: gradeId,
+      subjectId: subjectId,
+      classId: classId,
+      className: className,
+      date: date,
+      time: time,
+      duration: duration,
+      zoomLink: zoomLink,
+    );
+
+    try {
+      final response = await http.put(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+      return _parseMutationResponse(response);
+    } on UnauthorizedApiException {
+      return const CreateLiveSessionResult(success: false, message: 'Unauthorized');
+    } catch (e) {
+      return CreateLiveSessionResult(success: false, message: e.toString());
+    }
+  }
+
+  /// DELETE /sessions/:id — delete live session.
+  Future<bool> deleteSession(String sessionId) async {
+    if (!isConfigured) return false;
+    final token = _prefs.getString(AppConstants.sessionTokenKey);
+    if (token == null || token.isEmpty) return false;
+
+    final id = sessionId.trim();
+    if (id.isEmpty) return false;
+
+    final uri = Uri.parse('$_apiBase/sessions/$id');
+    try {
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) return true;
+
+      final rawBody = response.body.trim();
+      if (rawBody.isEmpty) return false;
+      try {
+        final raw = jsonDecode(response.body);
+        if (raw is Map) {
+          final decoded = Map<String, dynamic>.from(raw);
+          ensureAuthorized(decoded);
+          final s = decoded['success'];
+          return s == true || s == 1 || (s is String && s.toLowerCase() == 'true');
+        }
+      } on UnauthorizedApiException {
+        return false;
+      } catch (_) {
+        return false;
+      }
+      return false;
+    } on UnauthorizedApiException {
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 }
