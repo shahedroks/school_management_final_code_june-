@@ -35,17 +35,18 @@ class LiveSessionJoinPolicy {
   static DateTime? estimatedEnd(LiveSessionEntity s) {
     final start = scheduledStart(s);
     if (start == null) return null;
-    final dur = s.durationMinutes ?? 90;
+    final dur = s.durationMinutes ?? 60;
     return start.add(Duration(minutes: dur));
   }
 
-  /// True when the student should see an enabled Join button.
-  static bool canJoinNow(
+  /// True from [minutesBefore] start until scheduled end (or API `isActive`).
+  /// Used to bucket running sessions even when status is still `approved`.
+  static bool isSessionRunning(
     LiveSessionEntity s, {
     int minutesBefore = defaultMinutesBefore,
   }) {
     if (s.isCompleted) return false;
-    if (s.isActive) return s.link.trim().isNotEmpty;
+    if (s.isActive) return true;
 
     final start = scheduledStart(s);
     if (start == null) return false;
@@ -53,9 +54,15 @@ class LiveSessionJoinPolicy {
     final now = DateTime.now();
     final openAt = start.subtract(Duration(minutes: minutesBefore));
     final endAt = estimatedEnd(s) ?? start.add(const Duration(hours: 2));
+    return !now.isBefore(openAt) && !now.isAfter(endAt);
+  }
 
-    if (now.isBefore(openAt)) return false;
-    if (now.isAfter(endAt)) return false;
+  /// True when the student should see an enabled Join button.
+  static bool canJoinNow(
+    LiveSessionEntity s, {
+    int minutesBefore = defaultMinutesBefore,
+  }) {
+    if (!isSessionRunning(s, minutesBefore: minutesBefore)) return false;
     return s.link.trim().isNotEmpty;
   }
 

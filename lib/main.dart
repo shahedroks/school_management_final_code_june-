@@ -64,23 +64,26 @@ void main() async {
   final AssignmentsRepository assignmentsRepo = AssignmentsRepositoryImpl(prefs);
   final StudentsRepository studentsRepo = StudentsRepositoryImpl();
   final TimetableRepository timetableRepo = TimetableRepositoryImpl(prefs);
-  final LiveSessionsRepository liveSessionsRepo =
-      LiveSessionsRepositoryImpl(prefs);
+  final TeacherDashboardRepository teacherDashboardRepo =
+      TeacherDashboardRepositoryImpl(prefs);
+  final StudentDashboardRepository studentDashboardRepo =
+      StudentDashboardRepositoryImpl(prefs);
+  final LiveSessionsRepository liveSessionsRepo = LiveSessionsRepositoryImpl(
+    prefs,
+    teacherDashboard: teacherDashboardRepo,
+    studentDashboard: studentDashboardRepo,
+  );
   final NotificationsRepository notificationsRepo =
       NotificationsRepositoryImpl();
   final SubscriptionRepository subscriptionRepo =
       SubscriptionRepositoryImpl(prefs);
   final SubjectsRepository subjectsRepo = SubjectsRepositoryImpl(prefs);
-  final StudentDashboardRepository studentDashboardRepo =
-      StudentDashboardRepositoryImpl(prefs);
   final StudentClassesRepository studentClassesRepo =
       StudentClassesRepositoryImpl(prefs);
   final StudentProfileRepository studentProfileRepo =
       StudentProfileRepositoryImpl(prefs);
   final StudentAssignmentDetailsRepository studentAssignmentDetailsRepo =
       StudentAssignmentDetailsRepositoryImpl(prefs);
-  final TeacherDashboardRepository teacherDashboardRepo =
-      TeacherDashboardRepositoryImpl(prefs);
   final TeacherClassesRepository teacherClassesRepo =
       TeacherClassesRepositoryImpl(prefs, classesRepo);
   final TeacherProfileRepository teacherProfileRepo =

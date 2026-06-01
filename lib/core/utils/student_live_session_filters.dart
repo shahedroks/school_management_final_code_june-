@@ -1,3 +1,4 @@
+import 'package:high_school/core/utils/live_session_join_policy.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
 
 /// Which live sessions a student should see in lists.
@@ -12,7 +13,13 @@ class StudentLiveSessionFilters {
         st == 'cancelled') {
       return false;
     }
-    if (s.isCompleted && !s.isActive) return false;
+    if (s.isCompleted) return false;
+    final end = LiveSessionJoinPolicy.estimatedEnd(s);
+    if (end != null &&
+        DateTime.now().isAfter(end) &&
+        !LiveSessionJoinPolicy.isSessionRunning(s)) {
+      return false;
+    }
     return true;
   }
 

@@ -132,19 +132,20 @@ class TeacherDashboardScreen extends StatelessWidget {
               ))
           .toList();
 
-      var upcomingSessions =
-          List<TeacherDashboardUpcomingSession>.from(api.upcomingLiveSessions);
+      List<TeacherDashboardUpcomingSession> upcomingSessions;
       var todaysClasses =
           List<TeacherDashboardTodayClass>.from(api.todaysClasses);
 
       if (sessionsRepo.teacherSessionsApiConfigured) {
         final overview = await sessionsRepo.getTeacherSessionsOverview();
-        if (overview.fromRemote) {
-          upcomingSessions = _mergeUpcomingSessions(
-            upcomingSessions,
-            _upcomingSessionsFromOverview(overview),
-          );
-        }
+        upcomingSessions = overview.fromRemote
+            ? _upcomingSessionsFromOverview(overview)
+            : List<TeacherDashboardUpcomingSession>.from(
+                api.upcomingLiveSessions,
+              );
+      } else {
+        upcomingSessions =
+            List<TeacherDashboardUpcomingSession>.from(api.upcomingLiveSessions);
       }
 
       if (todaysClasses.isEmpty && today.isNotEmpty) {
@@ -1411,21 +1412,6 @@ List<TeacherDashboardUpcomingSession> _upcomingSessionsFromOverview(
   return _liveSessionsFromOverview(overview)
       .map(_upcomingSessionFromEntity)
       .toList();
-}
-
-List<TeacherDashboardUpcomingSession> _mergeUpcomingSessions(
-  List<TeacherDashboardUpcomingSession> primary,
-  List<TeacherDashboardUpcomingSession> supplemental,
-) {
-  final seen = primary.map((e) => e.id).where((id) => id.isNotEmpty).toSet();
-  final merged = List<TeacherDashboardUpcomingSession>.from(primary);
-  for (final s in supplemental) {
-    if (s.id.isEmpty || seen.contains(s.id)) continue;
-    seen.add(s.id);
-    merged.add(s);
-  }
-  merged.sort(_compareUpcomingSessionDateTime);
-  return merged;
 }
 
 List<LiveSessionEntity> _filterUpcomingMock(

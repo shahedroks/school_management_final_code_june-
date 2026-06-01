@@ -75,31 +75,32 @@ class LiveSessionsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            // Active Now section
-            if (activeSessions.isNotEmpty) ...[
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
+            // Active Now — running sessions (including late join within duration)
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: activeSessions.isNotEmpty ? Colors.red : Colors.grey.shade400,
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${lang.t('live.activeNow')} (${activeSessions.length})',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${lang.t('live.activeNow')} (${activeSessions.length})',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (activeSessions.isEmpty)
+              _EmptyActiveCard(lang: lang)
+            else
               ...activeSessions.map((s) => _ActiveSessionCard(session: s, lang: lang)),
-              const SizedBox(height: 20),
-            ],
+            const SizedBox(height: 20),
             // Upcoming Sessions section
             Text(
               '${lang.t('live.upcomingSessions')} (${upcomingSessions.length})',
@@ -119,10 +120,6 @@ class LiveSessionsScreen extends StatelessWidget {
                             : 'Class'),
                     lang: lang,
                   )),
-            if (activeSessions.isEmpty && upcomingSessions.isEmpty) ...[
-              const SizedBox(height: 16),
-              _EmptyAllCard(lang: lang),
-            ],
             const SizedBox(height: 24),
           ],
           ),
@@ -141,6 +138,7 @@ class _ActiveSessionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final platformStr = session.platform == LiveSessionPlatform.zoom ? 'Zoom' : 'Meet';
+    final canJoin = LiveSessionJoinPolicy.canJoinNow(session);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -175,14 +173,16 @@ class _ActiveSessionCard extends StatelessWidget {
               ),
             ),
             ElevatedButton.icon(
-              onPressed: () => context.go(
-                '/student/live-sessions/${session.id}',
-                extra: session,
-              ),
+              onPressed: canJoin
+                  ? () => launchStudentLiveSessionLink(context, lang, session)
+                  : () => context.go(
+                        '/student/live-sessions/${session.id}',
+                        extra: session,
+                      ),
               icon: const Icon(Icons.video_call, size: 16),
               label: Text(lang.t('live.joinSession')),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF2e7d32),
+                backgroundColor: const Color(0xFF2e7d32),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
               ),
@@ -341,6 +341,38 @@ class _UpcomingSessionCard extends StatelessWidget {
   }
 }
 
+class _EmptyActiveCard extends StatelessWidget {
+  final LanguageProvider lang;
+
+  const _EmptyActiveCard({required this.lang});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(
+          children: [
+            Icon(Icons.video_call, size: 32, color: Colors.grey.shade400),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                lang.t('live.noActiveSessions'),
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyUpcomingCard extends StatelessWidget {
   final LanguageProvider lang;
 
@@ -372,32 +404,3 @@ class _EmptyUpcomingCard extends StatelessWidget {
   }
 }
 
-class _EmptyAllCard extends StatelessWidget {
-  final LanguageProvider lang;
-
-  const _EmptyAllCard({required this.lang});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.2), width: 2),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-        child: Column(
-          children: [
-            Icon(Icons.video_call, size: 40, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
-            Text(
-              lang.t('live.noActiveSessions'),
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

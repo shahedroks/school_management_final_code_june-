@@ -9,19 +9,28 @@ import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/entities/student_live_sessions_overview.dart';
 import 'package:high_school/domain/entities/teacher_live_sessions_overview.dart';
 import 'package:high_school/domain/repositories/live_sessions_repository.dart';
+import 'package:high_school/domain/repositories/student_dashboard_repository.dart';
+import 'package:high_school/domain/repositories/teacher_dashboard_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LiveSessionsRepositoryImpl implements LiveSessionsRepository {
-  LiveSessionsRepositoryImpl(SharedPreferences prefs)
-      : _studentSessions = StudentLiveSessionsRemoteDatasource(prefs),
+  LiveSessionsRepositoryImpl(
+    SharedPreferences prefs, {
+    TeacherDashboardRepository? teacherDashboard,
+    StudentDashboardRepository? studentDashboard,
+  })  : _studentSessions = StudentLiveSessionsRemoteDatasource(prefs),
         _teacherSessions = TeacherLiveSessionsRemoteDatasource(prefs),
         _teacherClasses = TeacherClassesRemoteDatasource(prefs),
-        _studentClasses = StudentClassesRemoteDatasource(prefs);
+        _studentClasses = StudentClassesRemoteDatasource(prefs),
+        _teacherDashboard = teacherDashboard,
+        _studentDashboard = studentDashboard;
 
   final StudentLiveSessionsRemoteDatasource _studentSessions;
   final TeacherLiveSessionsRemoteDatasource _teacherSessions;
   final TeacherClassesRemoteDatasource _teacherClasses;
   final StudentClassesRemoteDatasource _studentClasses;
+  final TeacherDashboardRepository? _teacherDashboard;
+  final StudentDashboardRepository? _studentDashboard;
 
   @override
   Future<List<LiveSessionEntity>> getLiveSessions() async =>
@@ -48,6 +57,7 @@ class LiveSessionsRepositoryImpl implements LiveSessionsRepository {
         ),
       );
       overview = await _mergeStudentClassDetailSessions(overview);
+      overview = await _mergeStudentDashboardActiveSessions(overview);
       final active = overview.activeNow
           .where(StudentLiveSessionFilters.isVisibleToStudent)
           .toList();
@@ -123,6 +133,24 @@ class LiveSessionsRepositoryImpl implements LiveSessionsRepository {
     return TeacherLiveSessionBuckets.mergeMissing(overview, extras);
   }
 
+  /// Dashboard can list live sessions before they appear in GET /sessions/student.
+  Future<TeacherLiveSessionsOverview> _mergeStudentDashboardActiveSessions(
+    TeacherLiveSessionsOverview overview,
+  ) async {
+    final dashboardRepo = _studentDashboard;
+    if (dashboardRepo == null) return overview;
+    final dashboard = await dashboardRepo.getDashboard();
+    if (dashboard == null) return overview;
+
+    final extras = <LiveSessionEntity>[];
+    for (final row in dashboard.activeLiveSessions) {
+      final entity = TeacherLiveSessionBuckets.entityFromStudentDashboardSession(row);
+      if (entity != null) extras.add(entity);
+    }
+    if (extras.isEmpty) return overview;
+    return TeacherLiveSessionBuckets.mergeMissing(overview, extras);
+  }
+
   @override
   Future<TeacherLiveSessionsOverview> getTeacherSessionsOverview() async {
     if (_teacherSessions.isConfigured) {
@@ -130,6 +158,7 @@ class LiveSessionsRepositoryImpl implements LiveSessionsRepository {
       if (remote != null) {
         var overview = TeacherLiveSessionBuckets.repartition(remote);
         overview = await _mergeClassDetailSessions(overview);
+        overview = await _mergeDashboardUpcomingSessions(overview);
         return overview;
       }
     }
@@ -181,6 +210,24 @@ class LiveSessionsRepositoryImpl implements LiveSessionsRepository {
       }
     }
 
+    return TeacherLiveSessionBuckets.mergeMissing(overview, extras);
+  }
+
+  /// Home dashboard can list sessions that are not yet in GET /sessions/teacher.
+  Future<TeacherLiveSessionsOverview> _mergeDashboardUpcomingSessions(
+    TeacherLiveSessionsOverview overview,
+  ) async {
+    final dashboardRepo = _teacherDashboard;
+    if (dashboardRepo == null) return overview;
+    final dashboard = await dashboardRepo.getDashboard();
+    if (dashboard == null) return overview;
+
+    final extras = <LiveSessionEntity>[];
+    for (final row in dashboard.upcomingLiveSessions) {
+      final entity = TeacherLiveSessionBuckets.entityFromDashboardSession(row);
+      if (entity != null) extras.add(entity);
+    }
+    if (extras.isEmpty) return overview;
     return TeacherLiveSessionBuckets.mergeMissing(overview, extras);
   }
 

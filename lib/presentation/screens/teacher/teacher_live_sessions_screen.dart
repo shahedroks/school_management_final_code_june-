@@ -6,7 +6,6 @@ import 'package:high_school/core/utils/app_date_format.dart';
 import 'package:high_school/domain/entities/class_entity.dart';
 import 'package:high_school/domain/entities/live_session_entity.dart';
 import 'package:high_school/domain/entities/teacher_live_sessions_overview.dart';
-import 'package:high_school/domain/repositories/classes_repository.dart';
 import 'package:high_school/domain/repositories/live_sessions_repository.dart';
 import 'package:high_school/domain/repositories/teacher_classes_repository.dart';
 import 'package:high_school/presentation/providers/auth_provider.dart';
@@ -40,10 +39,125 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
 
   Future<({TeacherLiveSessionsOverview overview, List<ClassEntity> classes})> _loadPage() async {
     final live = context.read<LiveSessionsRepository>();
-    final classesRepo = context.read<ClassesRepository>();
+    final auth = context.read<AuthProvider>();
+    final teacherId =
+        auth.user?.id == 'demo_teacher' ? 'teacher1' : auth.user?.id;
+    final teacherClassesRepo = context.read<TeacherClassesRepository>();
     final overview = await live.getTeacherSessionsOverview();
-    final classes = await classesRepo.getClasses();
+    final classes = await teacherClassesRepo.getMyClasses(teacherId);
     return (overview: overview, classes: classes);
+  }
+
+  ClassEntity? _classForSession(LiveSessionEntity session, List<ClassEntity> classes) {
+    if (session.classId.isNotEmpty) {
+      for (final c in classes) {
+        if (c.id == session.classId) return c;
+      }
+    }
+    final cn = session.className?.trim() ?? '';
+    if (cn.isNotEmpty) {
+      for (final c in classes) {
+        if (c.name.trim() == cn) return c;
+        if ('${c.subject} - ${c.level}'.trim() == cn) return c;
+        if ('${c.subject} · ${c.level}'.trim() == cn) return c;
+      }
+    }
+    final sub = session.subject?.trim() ?? '';
+    final grade = session.gradeLevel?.trim() ?? '';
+    if (sub.isNotEmpty && grade.isNotEmpty) {
+      for (final c in classes) {
+        if (c.subject.trim() == sub && c.level.trim() == grade) return c;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _editSession(
+    BuildContext context,
+    LanguageProvider lang,
+    LiveSessionEntity session,
+    List<ClassEntity> classes,
+  ) async {
+    final teacherClassesRepo = context.read<TeacherClassesRepository>();
+    var cls = _classForSession(session, classes);
+
+    if (cls == null && session.classId.isNotEmpty) {
+      cls = await teacherClassesRepo.getClassById(session.classId);
+    }
+
+    if (!context.mounted) return;
+
+    if (cls == null) {
+      final auth = context.read<AuthProvider>();
+      final teacherId =
+          auth.user?.id == 'demo_teacher' ? 'teacher1' : auth.user?.id;
+      final myClasses = await teacherClassesRepo.getMyClasses(teacherId);
+      if (!context.mounted) return;
+      if (myClasses.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(lang.t('classes.noClassesFound'))),
+        );
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: (dialogCtx) => AlertDialog(
+          title: Text(lang.t('students.selectClass')),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: myClasses.length,
+              itemBuilder: (_, i) {
+                final c = myClasses[i];
+                final subtitle = '${c.subject} · ${c.level}';
+                final titleText = c.name.trim().isNotEmpty ? c.name : subtitle;
+                return ListTile(
+                  title: Text(titleText),
+                  subtitle: c.name.trim().isNotEmpty ? Text(subtitle) : null,
+                  onTap: () async {
+                    Navigator.pop(dialogCtx);
+                    await _openEditDialog(context, lang, session, c);
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: Text(lang.t('common.cancel')),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    await _openEditDialog(context, lang, session, cls);
+  }
+
+  Future<void> _openEditDialog(
+    BuildContext context,
+    LanguageProvider lang,
+    LiveSessionEntity session,
+    ClassEntity cls,
+  ) async {
+    final teacherClassesRepo = context.read<TeacherClassesRepository>();
+    final full = await teacherClassesRepo.getClassById(cls.id);
+    if (!context.mounted) return;
+    final forDialog = full ?? cls;
+    showTeacherCreateLiveSessionDialog(
+      context,
+      lang,
+      forDialog,
+      editing: session,
+      onSuccess: () {
+        if (!mounted) return;
+        _reload();
+      },
+    );
   }
 
   Future<void> _reload() async {
@@ -88,15 +202,6 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
         final upcomingSessions = overview.upcoming;
         final completedSessions = overview.completed;
 
-        ClassEntity? classFor(LiveSessionEntity s) {
-          if (s.classId.isEmpty) return null;
-          try {
-            return classes.firstWhere((c) => c.id == s.classId);
-          } catch (_) {
-            return null;
-          }
-        }
-
         return RefreshIndicator(
           onRefresh: _reload,
           child: Material(
@@ -117,7 +222,8 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                         context,
                         lang,
                         s,
-                        classFor(s),
+                        _classForSession(s, classes),
+                        classes,
                         isLive: true,
                         isCompleted: false,
                         showManageActions: false,
@@ -135,7 +241,8 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                         context,
                         lang,
                         s,
-                        classFor(s),
+                        _classForSession(s, classes),
+                        classes,
                         isLive: false,
                         isCompleted: false,
                         showManageActions: s.canManage,
@@ -150,7 +257,8 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                         context,
                         lang,
                         s,
-                        classFor(s),
+                        _classForSession(s, classes),
+                        classes,
                         isLive: false,
                         isCompleted: true,
                         showManageActions: false,
@@ -242,7 +350,8 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
     BuildContext context,
     LanguageProvider lang,
     LiveSessionEntity session,
-    ClassEntity? cls, {
+    ClassEntity? cls,
+    List<ClassEntity> classes, {
     required bool isLive,
     required bool isCompleted,
     required bool showManageActions,
@@ -417,15 +526,8 @@ class _TeacherLiveSessionsScreenState extends State<TeacherLiveSessionsScreen> {
                       ],
                       if (showManageActions) ...[
                         IconButton(
-                          onPressed: cls == null
-                              ? null
-                              : () => showTeacherCreateLiveSessionDialog(
-                                    context,
-                                    lang,
-                                    cls,
-                                    editing: session,
-                                    onSuccess: _reload,
-                                  ),
+                          onPressed: () =>
+                              _editSession(context, lang, session, classes),
                           icon: const Icon(Icons.edit_outlined, size: 22, color: AppTheme.primary),
                           style: IconButton.styleFrom(backgroundColor: AppTheme.primary.withValues(alpha: 0.08)),
                         ),

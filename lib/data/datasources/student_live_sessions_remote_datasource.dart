@@ -67,8 +67,6 @@ class StudentLiveSessionsRemoteDatasource {
     }
 
     addAll(await getSessions());
-    if (merged.isNotEmpty) return merged;
-
     for (final status in const [
       'approved',
       'ongoing',
